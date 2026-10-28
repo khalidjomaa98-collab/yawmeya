@@ -1,0 +1,46 @@
+# Builds the Android APK on GitHub's servers and publishes it as the "apk-latest" release,
+# so it can be downloaded on the phone from the repo's Releases page.
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths: ['android-app/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - name: Point the app at this repo's GitHub Pages site
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          sed -i "s/GITHUB_USER/$OWNER/" capacitor.config.json
+          cat capacitor.config.json
+      - run: npx cap sync android
+      - name: Build APK
+        working-directory: android-app/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk ../yawmeya.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: اليومية - نسخة الأندرويد
+          body: نزّل ملف yawmeya.apk على موبايل الأندرويد وسطّبه.
+          files: yawmeya.apk
+          make_latest: true

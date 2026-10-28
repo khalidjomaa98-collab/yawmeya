@@ -1,0 +1,12 @@
+{
+  "appId": "com.yawmeya.app",
+  "appName": "اليومية",
+  "webDir": "../docs",
+  "server": {
+    "url": "https://GITHUB_USER.github.io/yawmeya/",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
