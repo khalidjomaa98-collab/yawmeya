@@ -18,7 +18,7 @@
 :root{
   --brand:#14325e; --brand-2:#1f4f8f; --brand-ink:#ffffff; --brand-muted:rgba(255,255,255,.75);
   --bg:#f1f3f7; --surface:#ffffff; --sunk:#f4f6f9; --ink:#141a24; --muted:#5b6574; --line:#e1e5eb;
-  --accent:#2457b3; --accent-ink:#ffffff;
+  --accent:#2457b3; --accent-ink:#ffffff; --strong:#14325e;
   --took:#0b8a4a; --took-soft:#e3f5eb; --gave:#d33a2f; --gave-soft:#fde8e6;
   --shadow:0 1px 2px rgba(18,24,34,.06),0 8px 24px rgba(18,24,34,.08);
   --scrim:rgba(10,16,26,.55);
@@ -29,7 +29,7 @@
 @media (prefers-color-scheme: dark){:root{
   --brand:#122640; --brand-2:#1c3d68; --brand-muted:rgba(255,255,255,.7);
   --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
-  --accent:#3f7be0; --accent-ink:#ffffff;
+  --accent:#3f7be0; --accent-ink:#ffffff; --strong:#3f7be0;
   --took:#3cc683; --took-soft:#11291c; --gave:#ff7b70; --gave-soft:#331716;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.65); color-scheme:dark;
 }}
@@ -117,7 +117,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .mid .note{color:var(--ink);opacity:.75}
 .lockhero{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 .lockhero p{color:var(--muted);font-size:.92rem;max-width:34ch}
-.lockic{width:64px;height:64px;border-radius:50%;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;flex-shrink:0}
+.lockic{width:64px;height:64px;border-radius:50%;background:var(--strong);color:var(--brand-ink);display:grid;place-items:center;flex-shrink:0}
 .lockic svg{width:30px;height:30px}
 .lockic.sm{width:42px;height:42px} .lockic.sm svg{width:20px;height:20px}
 .kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -125,7 +125,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .kpis3 small{display:block;color:var(--muted);font-size:.8rem}
 .kpis3 b{font-size:1.15rem}
 .pinlbl{text-align:center;font-weight:600}
-.btn.dark{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.btn.dark{background:var(--strong);border-color:var(--strong);color:#fff}
 .dayinfo{color:var(--brand-muted);font-size:.85rem}
 .card.flat{box-shadow:none;padding:12px}
 .took-bg{background:var(--took-soft)} .gave-bg{background:var(--gave-soft)}
@@ -271,7 +271,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="config.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
