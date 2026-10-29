@@ -416,7 +416,7 @@ function confetti(){
 }
 // touch ripple on buttons
 document.addEventListener('pointerdown', e => {
-  const b = e.target.closest('.act, .btn, .kp button, .pad button, .ubtn, .pick span'); if (!b || calm()) return;
+  const b = e.target.closest('.act, .btn, .kp button, .pad button, .ubtn, .dayrow'); if (!b || calm()) return;
   const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.2, sp = document.createElement('span');
   sp.className = 'ripple'; sp.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
   b.appendChild(sp); setTimeout(() => sp.remove(), 600);
