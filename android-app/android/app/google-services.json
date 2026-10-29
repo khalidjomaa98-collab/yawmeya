@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "629300948478",
+    "project_id": "yawmeya-b49ae",
+    "storage_bucket": "yawmeya-b49ae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:629300948478:android:34492258454cdfbcada4af",
+        "android_client_info": {
+          "package_name": "com.yawmeya.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYp9wgvnJMYUKkFSN7j7dRHo17cZ6cRlw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
