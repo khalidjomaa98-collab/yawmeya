@@ -50,7 +50,7 @@ button{cursor:pointer}
 
 /* top band */
 .band{background:linear-gradient(160deg,var(--brand-2),var(--brand) 70%);color:var(--brand-ink);padding-top:env(safe-area-inset-top,0px)}
-.band .in{max-width:680px;margin:0 auto;padding-block:14px 56px;display:flex;flex-direction:column;gap:14px}
+.band .in{max-width:680px;margin:0 auto;padding-block:14px 20px;display:flex;flex-direction:column;gap:14px}
 .bar{display:flex;align-items:center;gap:10px}
 .bar .who{flex:1;min-width:0}
 .bar .who b{display:block;font-size:1.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -68,8 +68,19 @@ button{cursor:pointer}
 .offline{background:var(--gave);color:#fff;text-align:center;font-size:.9rem;padding:6px 16px}
 .demo{background:#f5c542;color:#3a2a00;text-align:center;font-size:.85rem;font-weight:600;padding:4px 16px}
 
-.wrap{max-width:680px;margin:-40px auto 0;display:flex;flex-direction:column;gap:18px;padding-bottom:40px;position:relative}
+.band.tall .in{padding-bottom:56px}
+.wrap{max-width:680px;margin:18px auto 0;display:flex;flex-direction:column;gap:18px;padding-bottom:40px;position:relative}
+.wrap.lift{margin-top:-40px}
 .wrap.admin{padding-bottom:110px}
+.shops.light button{border-color:var(--line);color:var(--ink);background:var(--surface)}
+.shops.light button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.day{gap:8px}
+.dayrow{width:100%;border:0;background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:12px;text-align:start;color:var(--ink)}
+.dname{flex:1;min-width:0;display:flex;flex-direction:column}
+.dname small{color:var(--muted);font-size:.84rem}
+.dtot{display:flex;flex-direction:column;align-items:flex-end;font-weight:600;font-size:.98rem}
+.chev{font-size:1.4rem;color:var(--muted);transition:transform .25s;transform:rotate(0deg)}
+.day.open .chev{transform:rotate(-90deg)}
 section{display:flex;flex-direction:column;gap:10px}
 .head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
 
@@ -178,88 +189,52 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .back{border:0;background:none;color:var(--brand-ink);font-weight:600;align-self:flex-start;padding:4px 0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;z-index:40;max-width:calc(100% - 32px);text-align:center;box-shadow:var(--shadow)}
 
-/* ---------- motion ---------- */
-.act,.btn,.kp button,.pad button,.ubtn,.pick span{position:relative;overflow:hidden}
-.ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.18;transform:scale(0);pointer-events:none;animation:ripple .6s ease-out forwards}
+/* ---------- motion: short, smooth, no bounce on content ---------- */
+.act,.btn,.kp button,.pad button,.ubtn,.pick span,.dayrow{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.16;transform:scale(0);pointer-events:none;animation:ripple .5s ease-out forwards}
 .confetti{position:fixed;inset:0;pointer-events:none;z-index:50}
-.confetti i{position:absolute;left:50%;bottom:20%;width:9px;height:14px;border-radius:2px;animation:confetti 1.6s cubic-bezier(.2,.7,.3,1) forwards}
+.confetti i{position:absolute;left:50%;bottom:20%;width:9px;height:14px;border-radius:2px;animation:confetti 1.5s cubic-bezier(.2,.7,.3,1) forwards}
 @media (prefers-reduced-motion:no-preference){
-  .band.enter{animation:dropIn .5s cubic-bezier(.2,.8,.2,1) both}
-  .band{background-size:160% 160%;animation:bandShift 14s ease-in-out infinite alternate}
-  .band.enter{animation:dropIn .5s cubic-bezier(.2,.8,.2,1) both, bandShift 14s ease-in-out .5s infinite alternate}
-  .wrap.enter{animation:fadeUp .45s .08s cubic-bezier(.2,.8,.2,1) both}
-  .wrap.enter .act{animation:popIn .5s cubic-bezier(.3,1.5,.5,1) both}
-  .wrap.enter .act:nth-child(1){animation-delay:.12s} .wrap.enter .act:nth-child(2){animation-delay:.2s}
-  .login .in.enter > *{animation:fadeUp .5s cubic-bezier(.2,.8,.2,1) both}
-  .login .in.enter > *:nth-child(2){animation-delay:.06s} .login .in.enter > *:nth-child(3){animation-delay:.12s} .login .in.enter > *:nth-child(4){animation-delay:.18s} .login .in.enter > *:nth-child(5){animation-delay:.24s}
-  .act .ic{animation:float 3.2s ease-in-out infinite}
-  .act.gave .ic{animation-delay:1.6s}
-  .act:active .ic{transform:scale(.9)}
-  .item.rise{animation:fadeUp .4s cubic-bezier(.2,.8,.2,1) both}
-  .item.pop{animation:slideIn .45s cubic-bezier(.2,.9,.3,1.2) both, flash 1.4s ease-out both}
-  .item{transition:background .2s}
-  .overlay{animation:fade .2s ease-out both}
-  .overlay .sheet{animation:sheetUp .38s cubic-bezier(.2,.9,.3,1.05) both}
+  .band.enter .in > *{animation:fadeIn .3s ease-out both}
+  .wrap.enter > *{animation:fadeUp .32s cubic-bezier(.2,.8,.2,1) both}
+  .wrap.enter > *:nth-child(2){animation-delay:.04s} .wrap.enter > *:nth-child(3){animation-delay:.08s} .wrap.enter > *:nth-child(n+4){animation-delay:.12s}
+  .wrap.enter .act{animation:scaleIn .35s cubic-bezier(.2,.8,.2,1) both}
+  .wrap.enter .act:nth-child(2){animation-delay:.06s}
+  .login .in.enter > *{animation:fadeUp .35s cubic-bezier(.2,.8,.2,1) both}
+  .login .in.enter > *:nth-child(2){animation-delay:.04s} .login .in.enter > *:nth-child(n+3){animation-delay:.08s}
+  .item.rise{animation:fadeUp .3s cubic-bezier(.2,.8,.2,1) both}
+  .item.pop{animation:slideIn .35s cubic-bezier(.2,.8,.2,1) both}
+  .overlay{animation:fadeIn .18s ease-out both}
+  .overlay .sheet{animation:sheetUp .3s cubic-bezier(.2,.8,.2,1) both}
   .overlay.still,.overlay.still .sheet{animation:none}
-  .sheet .names .pick{animation:popIn .35s cubic-bezier(.3,1.5,.5,1) both}
-  .sheet .names .pick:nth-child(2){animation-delay:.03s} .sheet .names .pick:nth-child(3){animation-delay:.06s} .sheet .names .pick:nth-child(4){animation-delay:.09s}
-  .sheet .names .pick:nth-child(5){animation-delay:.12s} .sheet .names .pick:nth-child(6){animation-delay:.15s} .sheet .names .pick:nth-child(n+7){animation-delay:.18s}
-  .pick input:checked+span{animation:pick .3s cubic-bezier(.3,1.6,.5,1)}
-  .amtbox.bump{animation:bump .18s ease-out}
-  .kp button:active,.pad button:active{transform:scale(.92)}
-  .kp button,.pad button,.act,.btn{transition:transform .1s, background .15s}
-  .btn:active{transform:scale(.97)}
-  .kstep .av{animation:popIn .5s cubic-bezier(.3,1.6,.5,1) both}
-  .kstep .bignum{animation:popIn .5s .1s cubic-bezier(.3,1.6,.5,1) both}
-  .kstep.swap{animation:swapIn .4s cubic-bezier(.2,.9,.3,1.1) both}
-  .dots span{transition:background .15s, border-color .15s}
-  .dots span.pop{animation:dot .25s cubic-bezier(.3,1.8,.5,1)}
-  .dots.shake{animation:shake .45s}
-  .toast{animation:toastIn .4s cubic-bezier(.2,1.4,.4,1) both}
-  .badge{animation:popIn .4s cubic-bezier(.3,1.8,.5,1) both}
-  .nav button.on svg{animation:popIn .35s cubic-bezier(.3,1.8,.5,1)}
-  .empty{animation:fadeUp .5s .1s both}
+  .pick input:checked+span{animation:tap .2s ease-out}
+  .amtbox.bump{animation:tap .15s ease-out}
+  .kp button,.pad button,.act,.btn,.dayrow{transition:transform .1s ease-out, background .15s}
+  .kp button:active,.pad button:active{transform:scale(.94)}
+  .act:active,.btn:active,.dayrow:active{transform:scale(.98)}
+  .kstep.swap{animation:slideIn .3s cubic-bezier(.2,.8,.2,1) both}
+  .dots span.pop{animation:tap .2s ease-out}
+  .dots.shake{animation:shake .4s}
+  .toast{animation:toastIn .28s cubic-bezier(.2,.8,.2,1) both}
+  .day.open .list{animation:fadeUp .25s ease-out both}
 }
 @keyframes ripple{to{transform:scale(1);opacity:0}}
 @keyframes confetti{0%{transform:translate(-50%,0) rotate(0);opacity:1}100%{transform:translate(calc(-50% + var(--x)),var(--y)) rotate(var(--r));opacity:0}}
-@keyframes dropIn{from{transform:translateY(-24px);opacity:0}}
-@keyframes bandShift{from{background-position:0% 0%}to{background-position:100% 100%}}
-@keyframes fadeUp{from{transform:translateY(16px);opacity:0}}
-@keyframes popIn{from{transform:scale(.6);opacity:0}}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
-@keyframes slideIn{from{transform:translateX(40px);opacity:0}}
-@keyframes flash{0%,30%{background:var(--took-soft)}100%{background:transparent}}
-@keyframes fade{from{opacity:0}}
-@keyframes sheetUp{from{transform:translateY(60%);opacity:.3}}
-@keyframes pick{50%{transform:scale(1.12)}}
-@keyframes bump{50%{transform:scale(1.1)}}
-@keyframes swapIn{from{transform:translateX(-60px);opacity:0}}
-@keyframes dot{50%{transform:scale(1.45)}}
-@keyframes shake{20%,60%{transform:translateX(-10px)}40%,80%{transform:translateX(10px)}}
-@keyframes toastIn{from{transform:translate(-50%,40px);opacity:0}}
-
-
-/* amount pad */
-.amtbox{text-align:center;font-size:2.8rem;font-weight:700;line-height:1.1;padding:6px 0}
-.amtbox .num{font-family:var(--num)}
-.amtbox small{font-size:1rem;font-weight:500;color:var(--muted)}
-.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;direction:ltr}
-.kp button{border:0;background:var(--sunk);border-radius:14px;min-height:58px;font-family:var(--num);font-size:1.5rem;font-weight:500;color:var(--ink)}
-.kp button:active{background:var(--line)}
-details summary{cursor:pointer;padding:4px 0;list-style:none}
-details summary::-webkit-details-marker{display:none}
-.sht{display:flex;align-items:center;gap:8px}
-.ic-s{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center}
-.ic-s svg{width:18px;height:18px}
-.tbtn{border:0;background:var(--bg);color:var(--ink);border-radius:999px;padding:4px 12px;margin-inline-start:8px;font-weight:700}
-.names .pick span{min-height:40px}
+@keyframes fadeIn{from{opacity:0}}
+@keyframes fadeUp{from{transform:translateY(10px);opacity:0}}
+@keyframes scaleIn{from{transform:scale(.94);opacity:0}}
+@keyframes slideIn{from{transform:translateX(24px);opacity:0}}
+@keyframes sheetUp{from{transform:translateY(40px);opacity:.4}}
+@keyframes tap{50%{transform:scale(1.06)}}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+@keyframes toastIn{from{transform:translate(-50%,20px);opacity:0}}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

@@ -50,7 +50,7 @@ const icon = {
 let S = {shops:[], users:[], parties:[], txs:[], notes:[]};
 let me = null;
 const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'', pinBusy:false, busy:false,
-  shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all', date:today()},
+  shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all'}, openDays:new Set([today()]), wipeOk:false,
   modal:null, toast:null, dirty:false, offline:!navigator.onLine, installEvt:null};
 
 const user = id => S.users.find(u => u.id === id);
@@ -177,10 +177,10 @@ async function op(local, remote, failMsg){
 }
 
 /* ---------- pieces ---------- */
-function band(inner){
+function band(inner, tall){
   const where = me.role === 'admin' ? 'المدير' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
-    <header class="band"><div class="in gut">
+    <header class="band${tall ? ' tall' : ''}"><div class="in gut">
       <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
@@ -247,8 +247,8 @@ function renderCashier(){
   const t = today(), s = shop(me.shop_id);
   if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
   const list = dayList(s.id, t).filter(live).sort((a, b) => b.ts - a.ts);
-  return `${band(sumBox(totals(list)))}
-  <main class="wrap gut">
+  return `${band(sumBox(totals(list)), true)}
+  <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
@@ -266,7 +266,7 @@ function renderAdmin(){
   const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
       <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div><small>أخدت / أعطيت</small><b class="num" style="font-size:1.05rem"><span class="in-t">${nf(totals(pend).took)}</span> / <span class="out-t">${nf(totals(pend).gave)}</span></b></div></div>`
-    : ui.tab === 'txs' ? sumBox(totals(S.txs.filter(t => (ui.f.shop === 'all' || t.shopId === ui.f.shop) && t.date === ui.f.date)))
+    : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
   return `${band(top)}<main class="wrap admin gut">${body}</main>
@@ -286,16 +286,22 @@ function tabKenash(){
       <ul class="list">${recent.map(x => item(x, {date:true, end:`<button class="btn link" data-a="untransfer" data-v="${x.id}">رجّعها</button>`})).join('')}</ul></section>` : ''}`;
 }
 function tabTxs(){
-  const f = ui.f;
-  const list = S.txs.filter(t => (f.shop === 'all' || t.shopId === f.shop) && t.date === f.date).sort((a, b) => b.ts - a.ts);
-  return `<div class="card"><div class="row2">
-      <div class="field"><label for="fdate">اليوم</label><input type="date" id="fdate" data-c="fdate" value="${f.date}" max="${today()}"></div>
-      <div class="field"><label for="fshop">المحل</label><select id="fshop" data-c="fshop"><option value="all">المحلين</option>${S.shops.map(s => `<option value="${s.id}" ${f.shop === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div></div>
-      ${(f.shop === 'all' ? S.shops : [shop(f.shop)]).map(s => { const r = totals(dayList(s.id, f.date));
-        return `<div class="head small"><span><b>${esc(s.name)}</b> · <span class="took-t num">${nf(r.took)}</span> / <span class="gave-t num">${nf(r.gave)}</span></span></div>`; }).join('')}</div>
-    ${list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
-        end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
-      : `<p class="empty">مفيش حركات في اليوم ده.</p>`}`;
+  const f = ui.f, inShop = t => f.shop === 'all' || t.shopId === f.shop;
+  const days = [...new Set(S.txs.filter(inShop).map(t => t.date))].sort().reverse();
+  if (!days.includes(today())) days.unshift(today());
+  return `${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
+    ${days.map(d => {
+      const list = S.txs.filter(t => inShop(t) && t.date === d).sort((a, b) => b.ts - a.ts), r = totals(list), open = ui.openDays.has(d);
+      return `<section class="day ${open ? 'open' : ''}">
+        <button class="dayrow" data-a="toggleDay" data-v="${d}" aria-expanded="${open}">
+          <span class="dname"><b>${dayLabel(d)}</b><small>${r.count} حركة</small></span>
+          <span class="dtot"><span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
+          <span class="chev" aria-hidden="true">‹</span></button>
+        ${open ? (list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
+            end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
+          : `<p class="empty">مفيش حركات في اليوم ده.</p>`) : ''}</section>`;
+    }).join('')}
+    <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
 }
 function tabNotes(){
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
@@ -311,7 +317,9 @@ function tabSet(){
         <div class="field"><label for="nu-name">الاسم</label><input id="nu-name" name="name" autocomplete="off"></div>
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
         <div class="field"><label for="nu-shop">المحل</label><select id="nu-shop" name="shop"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${'' === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>`;
+        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>
+    <section><h2 class="gave-t">مسح كل الحركات</h2><div class="card"><p class="muted small">بيمسح كل الحركات والإشعارات نهائي من المحلين. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
+      <button class="btn danger" data-a="wipe">امسح كل الحركات</button></div></section>`;
 }
 
 /* ---------- sheets ---------- */
@@ -368,6 +376,14 @@ function renderModal(){
       <p class="muted small">${admin ? 'هتتعلّم إنها ممسوحة، وتقدر ترجّعها بعدين.' : 'هتختفي من عندك، بس هشام هيشوف إنك مسحتها.'}</p>
       <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
       <button class="btn danger wide">امسح</button></form>`);
+  }
+  if (m.kind === 'wipe'){
+    const n = S.txs.length;
+    return sheet(`<h2>تمسح كل الحركات؟</h2>`, `<form id="wipef">
+      <div class="banner">هتتمسح <b class="num">${n}</b> حركة وكل الإشعارات <b>نهائي</b>، ومش هينفع ترجع.</div>
+      <div class="field"><label for="w-ok">علشان تأكد، اكتب كلمة <b>امسح</b></label><input id="w-ok" name="ok" autocomplete="off" data-autofocus></div>
+      <p id="ferr" class="err" role="alert"></p>
+      <button class="btn danger wide">امسح كل حاجة</button></form>`);
   }
   if (m.kind === 'pin'){
     const u = user(m.id), len = PIN_LEN[u.role];
@@ -523,6 +539,8 @@ const A = {
     op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
   tab(v){ ui.tab = v; window.scrollTo(0, 0); },
   kshop(v){ ui.kshop = v; },
+  fshop(v){ ui.f.shop = v; },
+  toggleDay(v){ ui.openDays.has(v) ? ui.openDays.delete(v) : ui.openDays.add(v); },
   send(v){ ui.modal = {kind:'send', id:v}; },
   sendOpen(v, e){
     const L = window.Capacitor?.Plugins?.AppLauncher;
@@ -550,6 +568,7 @@ const A = {
     return false;
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
+  wipe(){ ui.modal = {kind:'wipe'}; },
   askNotify(){ try { Notification.requestPermission().then(() => render()); } catch(e){} return false; }
 };
 
@@ -597,6 +616,11 @@ const F = {
     op(() => { t.deleted = {by:me.id, ts:Date.now(), reason}; ui.modal = null; toast('اتمسحت'); },
        async () => must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:reason})), 'ما اتمسحتش.');
   },
+  wipef(fd){
+    if (norm(fd.get('ok')) !== norm('امسح')) return formErr('اكتب كلمة "امسح" بالظبط.');
+    op(() => { S.txs = []; S.notes = []; seen.clear(); ui.modal = null; toast('اتمسحت كل الحركات'); },
+       async () => must(await sb.rpc('wipe_all')), 'ما اتمسحتش.');
+  },
   pinf(fd){
     const u = user(ui.modal.id), len = PIN_LEN[u.role], pin = latin(fd.get('pin')).trim();
     if (!new RegExp(`^\\d{${len}}$`).test(pin)) return formErr(`الرقم السري لازم يكون ${len} أرقام.`);
@@ -629,14 +653,14 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
-  if (c === 'fshop'){ ui.f.shop = el.value; render(); }
-  else if (c === 'ushop'){
+  if (c === 'ushop'){
     const u = user(el.dataset.u), v = el.value || null;
     op(() => { u.shop_id = v; toast(`${u.name}: ${v ? shop(v).name : 'من غير محل'}`); }, async () => must(await sb.from('profiles').update({shop_id:v}).eq('id', u.id)));
   }
   else if (c === 'fdate'){
-    ui.f.date = el.value || today(); render();
-    if (ui.f.date < addDays(today(), -45) && !extraDays.has(ui.f.date)) fetchDay(ui.f.date).catch(() => toast('ما قدرتش أجيب اليوم ده'));
+    const d = el.value; if (!d) return;
+    ui.openDays.add(d); render();
+    if (!extraDays.has(d)) fetchDay(d).catch(() => toast('ما قدرتش أجيب اليوم ده'));
   }
   else if (el.name === 'party'){
     const p = el.value === '__new' ? null : party(el.value), pq = document.getElementById('pq');
