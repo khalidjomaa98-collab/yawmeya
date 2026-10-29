@@ -1,20 +1,19 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:true, autoRefreshToken:true, storageKey:'yawmeya-auth'}});
+const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
+const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
-// Same two actions as Konnash: أخدت = money came in from the person, أعطيت = given to the person.
-const TYPES = {
-  took:{label:'أخدت', prep:'من', sign:'+'},
-  gave:{label:'أعطيت', prep:'لـ', sign:'−'}
-};
+// Same two actions as Konnash: أخدت = came in from the person, أعطيت = given to the person.
+const TYPES = {took:{label:'أخدت', prep:'من', sign:'+'}, gave:{label:'أعطيت', prep:'لـ', sign:'−'}};
 const PIN_LEN = {admin:6, cashier:4};
 const KONNASH_OPEN = `intent://#Intent;package=${CFG.konnashPackage};S.browser_fallback_url=${encodeURIComponent('https://play.google.com/store/apps/details?id=' + CFG.konnashPackage)};end`;
+const AV_COLORS = ['#2f6fd6', '#0f8f7e', '#8a4fd1', '#d0741c', '#c2416b', '#4b6b8a', '#2d8a3e', '#b8832a'];
 
 /* ---------- helpers ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const latin = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
 const nf = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
-const money = n => `<span class="num">${nf(n)}</span> ج.م`;
+const money = n => `<span class="num">${nf(n)}</span> <span class="cur">ج.م</span>`;
 const z = n => String(n).padStart(2, '0');
 const cairoFmt = new Intl.DateTimeFormat('en-CA', {timeZone:'Africa/Cairo', year:'numeric', month:'2-digit', day:'2-digit'});
 const today = () => cairoFmt.format(new Date());
@@ -26,19 +25,31 @@ function dayLabel(ds){
   if (ds === addDays(t, -1)) return 'امبارح';
   const [Y, M, D] = ds.split('-'); return `${+D}/${+M}/${Y}`;
 }
-function tm(ts){
-  const d = new Date(ts); let h = d.getHours(); const ap = h < 12 ? 'ص' : 'م'; h = h % 12 || 12;
-  return `${h}:${z(d.getMinutes())} ${ap}`;
-}
+function tm(ts){ const d = new Date(ts); let h = d.getHours(); const ap = h < 12 ? 'ص' : 'م'; h = h % 12 || 12; return `${h}:${z(d.getMinutes())} ${ap}`; }
 const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const norm = s => String(s || '').trim().replace(/\s+/g, ' ').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+function avatar(name){
+  const n = String(name || '؟').trim(); let h = 0;
+  for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `<span class="av" style="background:${AV_COLORS[h % AV_COLORS.length]}" aria-hidden="true">${esc(n[0] || '؟')}</span>`;
+}
+const icon = {
+  took:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+  gave:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  out:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
+  kenash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>',
+  txs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  notes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
+  set:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>'
+};
 
 /* ---------- state ---------- */
 let S = {shops:[], users:[], parties:[], txs:[], closures:[], notes:[]};
 let me = null;
-const ui = {booting:true, busy:false, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'',
+const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'', pinBusy:false, busy:false,
   shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all', date:today()},
   modal:null, toast:null, dirty:false, offline:!navigator.onLine, installEvt:null};
 
@@ -49,13 +60,9 @@ const closureOf = (shopId, date) => S.closures.find(c => c.shopId === shopId && 
 const live = t => !t.deleted;
 const pname = t => party(t.partyId)?.name || '—';
 const pendingList = () => S.txs.filter(t => live(t) && !t.transferred && (ui.kshop === 'all' || t.shopId === ui.kshop)).sort((a, b) => a.ts - b.ts);
-
-function totals(list){
-  const r = {took:0, gave:0, count:0};
-  list.filter(live).forEach(t => { r[t.type] += t.amount; r.count++; });
-  return r;
-}
 const dayList = (shopId, date) => S.txs.filter(t => t.shopId === shopId && t.date === date);
+function totals(list){ const r = {took:0, gave:0, count:0}; list.filter(live).forEach(t => { r[t.type] += t.amount; r.count++; }); return r; }
+const upsert = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if (i >= 0) arr[i] = row; else arr.push(row); };
 
 /* ---------- data ---------- */
 const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id, userId:r.user_id, type:r.type, partyId:r.party_id,
@@ -63,10 +70,12 @@ const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
   transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null});
 const mapClosure = r => ({id:r.id, shopId:r.shop_id, date:r.day, userId:r.user_id, ts:Date.parse(r.ts)});
+const mapNote = n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
 
 async function refresh(){
+  if (DEMO) return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
   const [shops, users, parties, closures, txs, notes] = await Promise.all([
@@ -81,46 +90,45 @@ async function refresh(){
   S.users = must(users);
   S.parties = must(parties);
   S.closures = must(closures).map(mapClosure);
+  const pend = S.txs.filter(t => t.pending);
   S.txs = must(txs).map(mapTx);
-  S.notes = must(notes).map(n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read}));
+  pend.forEach(p => { if (!S.txs.some(t => t.id === p.id)) S.txs.push(p); });
+  S.notes = must(notes).map(mapNote);
   for (const d of extraDays) await fetchDay(d, false);
   if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null;
 }
 async function fetchDay(d, rerender = true){
+  if (DEMO) return;
   extraDays.add(d);
   const [txs, cl] = await Promise.all([sb.from('txs').select('*').eq('day', d), sb.from('closures').select('*').eq('day', d)]);
-  const have = new Set(S.txs.map(t => t.id));
-  must(txs).map(mapTx).forEach(t => { if (!have.has(t.id)) S.txs.push(t); });
-  const hc = new Set(S.closures.map(c => c.id));
-  must(cl).map(mapClosure).forEach(c => { if (!hc.has(c.id)) S.closures.push(c); });
+  must(txs).map(mapTx).forEach(t => upsert(S.txs, t));
+  must(cl).map(mapClosure).forEach(c => upsert(S.closures, c));
   if (rerender) render();
 }
 
-let chan = null, rtTimer = null, lastNoteTs = 0;
+// Live updates apply the changed row directly instead of reloading everything.
+let chan = null, rtTimer = null;
 function subscribe(){
+  if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'closures', 'parties']) chan.on('postgres_changes', {event:'*', schema:'public', table}, scheduleRefresh);
+  for (const table of ['txs', 'notes', 'closures', 'parties']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
-function scheduleRefresh(){
-  clearTimeout(rtTimer);
-  rtTimer = setTimeout(async () => {
-    if (!me) return;
-    try { await refresh(); } catch(e){ return; }
-    notifyDevice();
-    softRender();
-  }, 350);
+function onChange(table, p){
+  const del = p.eventType === 'DELETE', row = p.new, old = p.old;
+  if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
+  else if (table === 'closures'){ if (del) S.closures = S.closures.filter(c => c.id !== old.id); else upsert(S.closures, mapClosure(row)); }
+  else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
+  else if (table === 'notes' && me?.role === 'admin'){
+    if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
+    else if (!del) upsert(S.notes, mapNote(row));
+  }
+  clearTimeout(rtTimer); rtTimer = setTimeout(softRender, 120);
 }
-function notifyDevice(){
-  if (me?.role !== 'admin') return;
-  const fresh = S.notes.filter(n => !n.read && n.ts > lastNoteTs);
-  if (S.notes[0]) lastNoteTs = Math.max(lastNoteTs, S.notes[0].ts);
-  if (!fresh.length || !document.hidden) return;
-  try {
-    if ('Notification' in window && Notification.permission === 'granted')
-      fresh.slice(0, 3).forEach(n => new Notification('اليومية', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}));
-  } catch(e){}
+function notifyDevice(n){
+  if (!document.hidden) return;
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('اليومية', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}); } catch(e){}
 }
 function softRender(){
   const a = document.activeElement;
@@ -135,16 +143,11 @@ async function loadLogin(){
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){
-    me = r.data;
-    await refresh();
-    lastNoteTs = S.notes[0]?.ts || 0;
-    subscribe();
-  } else {
-    me = null; await sb.auth.signOut();
-  }
+  if (r.data && r.data.active){ me = r.data; await refresh(); subscribe(); }
+  else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
+  if (DEMO) return {};
   const {data, error} = await sb.functions.invoke('auth', {body});
   if (error){
     let code = 'server';
@@ -166,235 +169,233 @@ function errText(e){
   return 'حصلت مشكلة، جرّب تاني.';
 }
 
-/* ---------- pieces ---------- */
-function topbar(){
-  const where = me.role === 'admin' ? 'المدير' : esc(shop(ui.shopId)?.name || '');
-  return `<header class="top"><div class="in">
-    <div class="me">${esc(me.name)} <small>· ${where}</small></div>
-    ${ui.installEvt ? `<button class="btn sm" data-a="install">سطّب</button>` : ''}
-    <button class="btn sm" data-a="logout">خروج</button></div></header>
-    ${ui.offline ? `<div class="offline">مفيش نت دلوقتي. الحركات مش هتتسجل لحد ما النت يرجع.</div>` : ''}`;
+// Change the screen right away, save in the background, and undo with a message if saving fails.
+async function op(local, remote, failMsg){
+  local(); render();
+  if (DEMO) return true;
+  try { await remote(); return true; }
+  catch(e){
+    toast(failMsg ? `${failMsg} ${errText(e)}` : errText(e));
+    try { await refresh(); } catch(_){}
+    render(); return false;
+  }
 }
-// One line per entry: name and amount on top, time/note/who underneath.
+
+/* ---------- pieces ---------- */
+function band(inner){
+  const where = me.role === 'admin' ? 'المدير' : 'كاشير';
+  return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
+    <header class="band"><div class="in gut">
+      <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
+        ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
+        <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
+      ${inner}
+    </div></header>
+    ${ui.offline ? `<div class="offline">مفيش نت. اللي هتسجله مش هيتحفظ لحد ما النت يرجع.</div>` : ''}`;
+}
+const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t">${nf(r.gave)}</b></div></div>`;
+const shopPills = (cur, action, all) => (S.shops.length < 2 && !all) ? '' :
+  `<div class="shops">${[...(all ? [['all', 'المحلين']] : []), ...S.shops.map(s => [s.id, s.name])].map(([id, n]) => `<button class="${cur === id ? 'on' : ''}" data-a="${action}" data-v="${id}">${esc(n)}</button>`).join('')}</div>`;
+
 function item(x, o = {}){
-  const T = TYPES[x.type];
-  const sub = [];
+  const T = TYPES[x.type], sub = [];
   if (o.date) sub.push(dayLabel(x.date));
   sub.push(tm(x.ts));
   if (o.shop) sub.push(esc(shop(x.shopId)?.name));
   if (o.who) sub.push(esc(user(x.userId)?.name));
   if (x.note) sub.push(esc(x.note));
-  let side = o.side || '';
-  if (o.mine && x.userId === me.id && !x.deleted) side = `<button class="btn link small" data-a="del" data-v="${x.id}">امسح</button>`;
-  const flags = [];
-  if (x.deleted) flags.push(`اتمسحت بواسطة ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}`);
-  if (o.admin && x.afterClose) flags.push('اتسجلت بعد الإقفال');
-  return `<li class="item ${x.deleted ? 'del' : ''} ${o.tap ? 'tap' : ''}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
-    <div class="who"><span class="chip ${x.type}">${T.label}</span>${esc(pname(x))}</div>
-    <div class="amt ${x.type}-t">${money(x.amount)}</div>
-    <div class="sub">${sub.join(' · ')}${flags.length ? `<div class="flag">${flags.join(' · ')}</div>` : ''}</div>
-    ${side ? `<div class="side">${side}</div>` : ''}</li>`;
-}
-function totalsBox(r){
-  return `<div class="totals"><div><small>أخدت</small><b class="took-t">${money(r.took)}</b></div><div><small>أعطيت</small><b class="gave-t">${money(r.gave)}</b></div></div>`;
-}
-function navIcon(n){
-  const p = {
-    kenash:'<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>',
-    txs:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
-    notes:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
-    set:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>'
-  }[n];
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  let end = o.end || '';
+  if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`;
+  if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
+  const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>`
+    : (o.admin && x.afterClose ? `<small class="flag">اتسجلت بعد الإقفال</small>` : '');
+  return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
+    ${avatar(pname(x))}
+    <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${flag}</div>
+    <div class="end"><span class="amt ${x.type}-t">${money(x.amount)}</span>${end}</div></li>`;
 }
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
-const shopSeg = (cur, action, all) => S.shops.length < 2 && !all ? '' :
-  `<div class="seg">${[...(all ? [['all', 'المحلين']] : []), ...S.shops.map(s => [s.id, s.name])].map(([id, n]) => `<button class="${cur === id ? 'on' : ''}" data-a="${action}" data-v="${id}">${esc(n)}</button>`).join('')}</div>`;
 
 /* ---------- screens ---------- */
-const renderBoot = () => `<main class="login"><h1>اليومية</h1><p class="muted">بيحمّل...</p></main>`;
+const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div><p class="muted">بيحمّل...</p></div></main>`;
 
 function renderSetup(){
-  return `<main class="login"><h1>أول تشغيل: حساب المدير</h1>
-    <p class="muted">الحساب ده لهشام. منه هيضيف الكاشيرية ويتابع الحركات. رقم المدير 6 أرقام.</p>
+  return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+    <h1>أول تشغيل: حساب المدير</h1>
+    <p class="muted">الحساب ده لهشام. منه هيضيف الكاشيرية ويتابع الحركات.</p>
     <form id="setupf" class="card">
       <div class="field"><label for="su-name">الاسم</label><input id="su-name" name="name" value="هشام" autocomplete="off"></div>
       <div class="field"><label for="su-pin">رقم سري من 6 أرقام</label><input id="su-pin" name="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div>
       <div class="field"><label for="su-pin2">اكتبه تاني</label><input id="su-pin2" name="pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div>
       <p id="ferr" class="err" role="alert"></p>
-      <button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>اعمل الحساب وادخل</button></form></main>`;
+      <button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>اعمل الحساب وادخل</button></form></div></main>`;
 }
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
-    return `<main class="login"><h1>مين بيسجل دلوقتي؟</h1>
-      ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${esc(u.name)}</button>`).join('')}</div>`
-        : `<p class="empty">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
-      ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}</main>`;
+    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+      <h1>مين بيسجل دلوقتي؟</h1>
+      ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : 'كاشير'}</small></button>`).join('')}</div>`
+        : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
+      ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}</div></main>`;
   }
   const u = ui.loginUsers.find(x => x.id === ui.pinUser), len = PIN_LEN[u.role];
-  return `<main class="login">
-    <button class="btn link" data-a="loginBack" style="align-self:flex-start">→ رجوع</button>
-    <h1>${esc(u.name)}، اكتب الرقم السري</h1>
+  return `<main class="login gut"><div class="in">
+    <button class="back" data-a="loginBack">→ رجوع</button>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px">${avatar(u.name)}<h1>${esc(u.name)}</h1><p class="muted">اكتب الرقم السري</p></div>
     <div class="dots ${ui.pinErr ? 'bad' : ''}" aria-label="${ui.pin.length} من ${len}">${Array.from({length:len}, (_, i) => `<span class="${i < ui.pin.length ? 'f' : ''}"></span>`).join('')}</div>
-    <p class="err" role="alert" style="text-align:center">${ui.busy ? '<span class="muted">بيتأكد...</span>' : esc(ui.pinErr)}</p>
-    <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n => `<button data-a="pin" data-v="${n}" ${ui.busy ? 'disabled' : ''}>${n}</button>`).join('')}
-      <button data-a="pinBack" aria-label="امسح رقم">⌫</button><button data-a="pin" data-v="0" ${ui.busy ? 'disabled' : ''}>0</button><span></span></div></main>`;
+    <p class="err" role="alert">${ui.pinBusy ? 'بيدخل...' : esc(ui.pinErr)}</p>
+    <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n => `<button data-a="pin" data-v="${n}" ${ui.pinBusy ? 'disabled' : ''}>${n}</button>`).join('')}
+      <button data-a="pinBack" aria-label="امسح رقم">⌫</button><button data-a="pin" data-v="0" ${ui.pinBusy ? 'disabled' : ''}>0</button><span></span></div></div></main>`;
 }
 
 function renderCashier(){
   const t = today(), s = shop(ui.shopId);
-  if (!s) return `${topbar()}<main class="wrap"><p class="empty">مفيش محلات متسجلة.</p></main>`;
+  if (!s) return `${band('')}<main class="wrap gut"><p class="empty">مفيش محلات متسجلة.</p></main>`;
   const cl = closureOf(s.id, t);
   const list = dayList(s.id, t).filter(live).sort((a, b) => b.ts - a.ts);
-  return `${topbar()}<main class="wrap">
-    ${shopSeg(ui.shopId, 'shop')}
-    ${cl ? `<div class="banner warn">اليومية اتقفلت الساعة ${tm(cl.ts)}. لو محتاج تسجل حاجة، كلّم هشام يفتحها.</div>` : ''}
-    <div class="big2">
-      <button class="bigbtn took" data-a="type" data-v="took" ${cl ? 'disabled' : ''}>أخدت<small>فلوس دخلت من حد</small></button>
-      <button class="bigbtn gave" data-a="type" data-v="gave" ${cl ? 'disabled' : ''}>أعطيت<small>فلوس أو بضاعة لحد</small></button>
+  return `${band(`${shopPills(ui.shopId, 'shop')}${sumBox(totals(list))}`)}
+  <main class="wrap gut">
+    <div class="acts">
+      <button class="act took" data-a="type" data-v="took" ${cl ? 'disabled' : ''}><span class="ic">${icon.took}</span>أخدت</button>
+      <button class="act gave" data-a="type" data-v="gave" ${cl ? 'disabled' : ''}><span class="ic">${icon.gave}</span>أعطيت</button>
     </div>
-    ${totalsBox(totals(list))}
-    <section><div class="head"><h2>النهارده</h2><span class="muted small">${list.length} حركة</span></div>
-      ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات النهارده.</p>`}
+    ${cl ? `<div class="banner">اليومية اتقفلت الساعة ${tm(cl.ts)}. لو محتاج تسجل حاجة، كلّم هشام يفتحها.</div>` : ''}
+    <section><div class="head"><h2>حركات النهارده</h2><span class="muted small">${s.name ? esc(s.name) + ' · ' : ''}${list.length}</span></div>
+      ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
     </section>
     ${cl ? '' : `<button class="btn wide" data-a="closeDay" ${list.length ? '' : 'disabled'}>اقفل يومية النهارده</button>`}
   </main>`;
 }
 
 function renderAdmin(){
-  const pending = S.txs.filter(t => live(t) && !t.transferred).length + S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck).length;
+  const pend = pendingList();
+  const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck).length;
   const unread = S.notes.filter(n => !n.read).length;
-  const tabs = [['kenash','كناش',pending],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
+  const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
+  const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
+      <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div><small>أخدت / أعطيت</small><b class="num" style="font-size:1.05rem"><span class="in-t">${nf(totals(pend).took)}</span> / <span class="out-t">${nf(totals(pend).gave)}</span></b></div></div>`
+    : ui.tab === 'txs' ? sumBox(totals(S.txs.filter(t => (ui.f.shop === 'all' || t.shopId === ui.f.shop) && t.date === ui.f.date)))
+    : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
-  return `${topbar()}<main class="wrap admin">${body}</main>
-    <nav class="nav" aria-label="الأقسام"><div class="in">${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${navIcon(k)}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
+  return `${band(top)}<main class="wrap admin gut">${body}</main>
+    <nav class="nav" aria-label="الأقسام"><div class="in">${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
 }
 function tabKenash(){
   const pend = pendingList();
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck);
   const recent = S.txs.filter(t => live(t) && t.transferred && t.transferredAt).sort((a, b) => b.transferredAt - a.transferredAt).slice(0, 6);
   const days = [...new Set(pend.map(t => t.date))];
-  return `<section><div class="head"><h2>لسه ما اتنقلش لكناش</h2><span class="muted small">${pend.length} حركة</span></div>
-    ${shopSeg(ui.kshop, 'kshop', true)}
-    ${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}">ابدأ النقل (${pend.length})</button>` : ''}</section>
-    ${alerts.length ? `<section><h2 class="gave-t">امسحها من كناش</h2>
-      <p class="muted small">الحركات دي اتنقلت لكناش وبعدين اتمسحت هنا.</p>
-      <ul class="list">${alerts.map(x => item(x, {shop:true, date:true, who:true, side:`<button class="btn sm" data-a="ack" data-v="${x.id}">مسحتها</button>`})).join('')}</ul></section>` : ''}
-    <section>${pend.length ? days.map(d => `<div class="dayhead">${dayLabel(d)}</div><ul class="list">${pend.filter(t => t.date === d).map(x => item(x, {tap:'send', shop:ui.kshop === 'all', who:true})).join('')}</ul>`).join('')
-      : `<p class="empty">كل الحركات اتنقلت لكناش.</p>`}</section>
+  return `${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}" style="box-shadow:var(--shadow)">ابدأ النقل لكناش</button>` : ''}
+    ${alerts.length ? `<section><h2 class="gave-t">امسح دول من كناش</h2>
+      <ul class="list">${alerts.map(x => item(x, {shop:true, date:true, end:`<button class="btn sm" data-a="ack" data-v="${x.id}">مسحتها</button>`})).join('')}</ul></section>` : ''}
+    ${pend.length ? days.map(d => `<section><div class="dayhead">${dayLabel(d)}</div><ul class="list">${pend.filter(t => t.date === d).map(x => item(x, {tap:'send', shop:ui.kshop === 'all', who:true})).join('')}</ul></section>`).join('')
+      : `<p class="empty">كل الحركات اتنقلت لكناش 👌</p>`}
     ${recent.length ? `<section><h2>آخر اللي اتنقل</h2>
-      <ul class="list">${recent.map(x => item(x, {date:true, side:`<button class="btn link small" data-a="untransfer" data-v="${x.id}">رجّعها</button>`})).join('')}</ul></section>` : ''}`;
+      <ul class="list">${recent.map(x => item(x, {date:true, end:`<button class="btn link" data-a="untransfer" data-v="${x.id}">رجّعها</button>`})).join('')}</ul></section>` : ''}`;
 }
 function tabTxs(){
   const f = ui.f;
   const list = S.txs.filter(t => (f.shop === 'all' || t.shopId === f.shop) && t.date === f.date).sort((a, b) => b.ts - a.ts);
-  const shops = f.shop === 'all' ? S.shops : [shop(f.shop)];
-  return `<section><div class="head"><h2>الحركات</h2><button class="btn sm" data-a="copyTxs" ${list.length ? '' : 'disabled'}>نسخ للإكسل</button></div>
-    <div class="row2">
+  return `<div class="card"><div class="row2">
       <div class="field"><label for="fdate">اليوم</label><input type="date" id="fdate" data-c="fdate" value="${f.date}" max="${today()}"></div>
-      <div class="field"><label for="fshop">المحل</label><select id="fshop" data-c="fshop"><option value="all">المحلين</option>${S.shops.map(s => `<option value="${s.id}" ${f.shop === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-    </div></section>
-    ${shops.map(s => {
-      const cl = closureOf(s.id, f.date);
-      return `<section><div class="head"><h3>${esc(s.name)}</h3>
-        ${cl ? `<span class="muted small">اتقفلت ${tm(cl.ts)} · <button class="btn link small" data-a="reopen" data-v="${cl.id}">افتحها</button></span>` : `<span class="muted small">مفتوحة</span>`}</div>
-        ${totalsBox(totals(dayList(s.id, f.date)))}</section>`;
-    }).join('')}
-    <section>${list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
-        side:x.deleted ? `<button class="btn link small" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link small" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
-      : `<p class="empty">مفيش حركات في اليوم ده.</p>`}</section>`;
+      <div class="field"><label for="fshop">المحل</label><select id="fshop" data-c="fshop"><option value="all">المحلين</option>${S.shops.map(s => `<option value="${s.id}" ${f.shop === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div></div>
+      ${(f.shop === 'all' ? S.shops : [shop(f.shop)]).map(s => { const cl = closureOf(s.id, f.date); const r = totals(dayList(s.id, f.date));
+        return `<div class="head small"><span><b>${esc(s.name)}</b> · <span class="took-t num">${nf(r.took)}</span> / <span class="gave-t num">${nf(r.gave)}</span></span>
+          ${cl ? `<span class="muted">اتقفلت ${tm(cl.ts)} <button class="btn link" data-a="reopen" data-v="${cl.id}">افتحها</button></span>` : `<span class="muted">مفتوحة</span>`}</div>`; }).join('')}
+      <button class="btn sm" data-a="copyTxs" ${list.length ? '' : 'disabled'} style="align-self:flex-start">نسخ للإكسل</button></div>
+    ${list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
+        end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
+      : `<p class="empty">مفيش حركات في اليوم ده.</p>`}`;
 }
 function tabNotes(){
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-  return `<section><h2>الإشعارات</h2>
-    ${perm === 'default' ? `<div class="banner"><p style="margin-bottom:8px">فعّل الإشعارات علشان توصلك والبرنامج في الخلفية.</p><button class="btn sm primary" data-a="askNotify">فعّل</button></div>` : ''}
-    ${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="who" style="font-weight:${n.read ? 400 : 700}">${esc(n.text)}</div><div class="sub">${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}</section>`;
+  return `${perm === 'default' ? `<div class="card"><p>فعّل الإشعارات علشان توصلك والبرنامج في الخلفية.</p><button class="btn primary" data-a="askNotify">فعّل الإشعارات</button></div>` : ''}
+    ${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b><small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
   return `<section><h2>المحلات</h2><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></section>
-    <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item"><div class="who">${esc(u.name)}</div>
-      <div class="sub">${u.role === 'admin' ? 'المدير' : 'كاشير'}${u.active ? '' : ' · موقوف'}</div>
-      <div class="side" style="grid-row:1/3;grid-column:2;gap:6px;flex-wrap:wrap">
-        <button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم السري</button>
+    <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : 'كاشير'}${u.active ? '' : ' · موقوف'}</small></div>
+      <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
         ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
       <form id="userf" class="card"><h3>ضيف كاشير</h3><div class="row2">
         <div class="field"><label for="nu-name">الاسم</label><input id="nu-name" name="name" autocomplete="off"></div>
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
-        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>
-    <section><h2>الأسماء</h2><p class="muted small">الكاشير بيضيف الأسماء الجديدة وهو بيسجل. ${S.parties.length} اسم متسجل.</p></section>`;
+        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>`;
 }
 
-/* ---------- modals ---------- */
+/* ---------- sheets ---------- */
+// Most-used names first, so the usual people are one tap away.
 function nameOptions(q, sel){
-  const nq = norm(q);
-  const ps = S.parties.filter(p => !nq || norm(p.name).includes(nq) || (p.phone || '').includes(latin(q).trim())).slice(0, 40);
+  const nq = norm(q), uses = {};
+  S.txs.forEach(t => { uses[t.partyId] = (uses[t.partyId] || 0) + 1; });
+  const ps = S.parties.filter(p => !nq || norm(p.name).includes(nq) || (p.phone || '').includes(latin(q).trim()))
+    .sort((a, b) => (uses[b.id] || 0) - (uses[a.id] || 0) || a.name.localeCompare(b.name, 'ar')).slice(0, nq ? 30 : 12);
   const exact = nq && S.parties.some(p => norm(p.name) === nq);
-  let h = ps.map(p => `<label class="opt"><input type="radio" name="party" value="${p.id}" ${sel === p.id ? 'checked' : ''}>${esc(p.name)}</label>`).join('');
-  if (nq && !exact) h += `<label class="opt new"><input type="radio" name="party" value="__new" ${sel === '__new' ? 'checked' : ''}>+ ضيف "${esc(q.trim())}"</label>`;
-  if (!h) h = `<p class="muted small">اكتب الاسم فوق.</p>`;
-  return h;
+  let h = ps.map(p => `<label class="pick"><input type="radio" name="party" value="${p.id}" ${sel === p.id ? 'checked' : ''}><span>${esc(p.name)}</span></label>`).join('');
+  if (nq && !exact) h += `<label class="pick new"><input type="radio" name="party" value="__new" ${sel === '__new' ? 'checked' : ''}><span>+ ${esc(q.trim())} (جديد)</span></label>`;
+  return h || `<p>اكتب الاسم فوق.</p>`;
+}
+function sheet(head, body, cls = ''){
+  return `<div class="overlay" data-a="closeModal"><div class="sheet" data-a="noop" role="dialog" aria-modal="true">
+    <div class="sh ${cls}">${head}${xBtn}</div><div class="sb">${body}</div></div></div>`;
 }
 function renderModal(){
   const m = ui.modal; if (!m) return '';
-  let b = '';
   if (m.kind === 'tx'){
     const T = TYPES[m.type];
-    b = `<form id="txf" novalidate>
-      <div class="shead ${m.type}"><h2>${T.label} ${T.prep === 'لـ' ? 'لـ...' : 'من...'}</h2>${xBtn}</div>
+    return sheet(`<h2>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
       ${me.role === 'admin' ? `<div class="field"><label for="f-shop">المحل</label><select id="f-shop" name="shop">${S.shops.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
-      <div class="field"><label for="pq">الاسم</label>
-        <input id="pq" type="search" placeholder="اكتب الاسم" autocomplete="off" data-autofocus>
-        <div id="plist" class="names" role="radiogroup">${nameOptions('', null)}</div></div>
+      <div class="field"><label for="pq">الاسم</label><input id="pq" type="search" placeholder="اكتب الاسم أو اختار" autocomplete="off">
+        <div id="plist" class="names" role="radiogroup" style="margin-top:4px">${nameOptions('', null)}</div></div>
       <div class="field"><label for="f-amount">المبلغ</label><input id="f-amount" name="amount" class="amount" inputmode="decimal" autocomplete="off" placeholder="0"></div>
       <div class="field"><label for="f-note">ملاحظة (اختياري)</label><input id="f-note" name="note" autocomplete="off"></div>
       <p id="ferr" class="err" role="alert"></p>
-      <button class="btn ${m.type} wide">سجّل</button></form>`;
+      <button class="btn ${m.type} wide">سجّل</button></form>`, m.type);
   }
-  else if (m.kind === 'send'){
+  if (m.kind === 'send'){
     const x = S.txs.find(t => t.id === m.id);
     if (!x){ ui.modal = null; return ''; }
     const T = TYPES[x.type], left = pendingList().length;
-    b = `<div class="shead"><h3 class="muted">نقل لكناش${left ? ` · فاضل ${left}` : ''}</h3>${xBtn}</div>
+    return sheet(`<h3>نقل لكناش${left ? ` · فاضل <span class="num">${left}</span>` : ''}</h3>`, `
       <div class="kstep">
-        <div class="muted small">1. في كناش افتح</div>
+        ${avatar(pname(x))}
         <div class="name">${esc(pname(x))}</div>
-        <div class="press muted small">2. اضغط <b class="${x.type}">${T.label}</b> واكتب</div>
+        <div class="press">اضغط <b class="${x.type}">${T.label}</b> واكتب</div>
         <div class="bignum num ${x.type}-t">${nf(x.amount)}</div>
-        ${x.note ? `<div class="note">ملاحظة: ${esc(x.note)}</div>` : ''}
+        ${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
         <div class="muted small">${dayLabel(x.date)} ${tm(x.ts)} · ${esc(shop(x.shopId)?.name)} · ${esc(user(x.userId)?.name)}</div>
       </div>
       <a class="btn primary wide" href="${KONNASH_OPEN}" data-a="sendOpen">افتح كناش</a>
-      <button class="btn took wide" data-a="sendDone">اتسجلت${left > 1 ? '، اللي بعدها' : ''}</button>`;
+      <button class="btn took wide" data-a="sendDone">✓ اتسجلت${left > 1 ? '، اللي بعدها' : ''}</button>`);
   }
-  else if (m.kind === 'del'){
+  if (m.kind === 'del'){
     const x = S.txs.find(t => t.id === m.id), admin = me.role === 'admin';
     if (!x){ ui.modal = null; return ''; }
-    b = `<form id="delf"><div class="shead"><h2>تمسح الحركة دي؟</h2>${xBtn}</div>
-      <ul class="list">${item(x, {})}</ul>
+    return sheet(`<h2>تمسح الحركة دي؟</h2>`, `<form id="delf">
+      <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${item(x, {})}</ul>
       <p class="muted small">${admin ? 'هتتعلّم إنها ممسوحة، وتقدر ترجّعها بعدين.' : 'هتختفي من عندك، بس هشام هيشوف إنك مسحتها.'}</p>
-      <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off" data-autofocus></div>
-      <p id="ferr" class="err" role="alert"></p>
-      <button class="btn danger wide" ${ui.busy ? 'disabled' : ''}>امسح</button></form>`;
+      <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
+      <button class="btn danger wide">امسح</button></form>`);
   }
-  else if (m.kind === 'closeDay'){
-    b = `<div class="shead"><h2>اقفل يومية ${esc(shop(ui.shopId).name)}</h2>${xBtn}</div>
-      ${totalsBox(totals(dayList(ui.shopId, today())))}
+  if (m.kind === 'closeDay'){
+    const r = totals(dayList(ui.shopId, today()));
+    return sheet(`<h2>اقفل يومية ${esc(shop(ui.shopId).name)}</h2>`, `
+      <div class="row2"><div class="card" style="box-shadow:none;background:var(--took-soft)"><small class="muted">أخدت</small><b class="num took-t" style="font-size:1.4rem">${nf(r.took)}</b></div>
+        <div class="card" style="box-shadow:none;background:var(--gave-soft)"><small class="muted">أعطيت</small><b class="num gave-t" style="font-size:1.4rem">${nf(r.gave)}</b></div></div>
       <p class="muted small">بعد الإقفال مش هتقدر تسجل تاني النهارده في المحل ده إلا لو هشام فتحها.</p>
-      <button class="btn primary wide" data-a="confirmClose" ${ui.busy ? 'disabled' : ''}>اقفل</button>`;
+      <button class="btn primary wide" data-a="confirmClose">اقفل</button>`);
   }
-  else if (m.kind === 'pin'){
+  if (m.kind === 'pin'){
     const u = user(m.id), len = PIN_LEN[u.role];
-    b = `<form id="pinf"><div class="shead"><h2>رقم سري جديد لـ${esc(u.name)}</h2>${xBtn}</div>
+    return sheet(`<h2>رقم سري جديد لـ${esc(u.name)}</h2>`, `<form id="pinf">
       <div class="field"><label for="pn-pin">${len} أرقام</label><input id="pn-pin" name="pin" type="password" inputmode="numeric" maxlength="${len}" autocomplete="new-password" data-autofocus></div>
-      <p id="ferr" class="err" role="alert"></p><button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>احفظ</button></form>`;
+      <p id="ferr" class="err" role="alert"></p><button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>احفظ</button></form>`);
   }
-  else if (m.kind === 'copy'){
-    b = `<div class="shead"><h2>انسخ النص</h2>${xBtn}</div>
-      <p class="muted small">النص متعلّم. اضغط مطوّل واختار نسخ.</p>
-      <textarea id="copybox" rows="8" readonly dir="auto">${esc(m.text)}</textarea>`;
+  if (m.kind === 'copy'){
+    return sheet(`<h2>انسخ النص</h2>`, `<p class="muted small">النص متعلّم. اضغط مطوّل واختار نسخ.</p><textarea id="copybox" rows="8" readonly dir="auto">${esc(m.text)}</textarea>`);
   }
-  return `<div class="overlay" data-a="closeModal"><div class="sheet" data-a="noop" role="dialog" aria-modal="true">${b}</div></div>`;
+  return '';
 }
 
 /* ---------- render ---------- */
@@ -415,13 +416,12 @@ function render(){
   if (me?.role === 'admin' && ui.tab === 'notes' && S.notes.some(n => !n.read)){
     const ids = S.notes.filter(n => !n.read).map(n => n.id);
     S.notes.forEach(n => n.read = true);
-    sb.from('notes').update({read:true}).in('id', ids).then(() => {});
+    if (!DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {});
   }
 }
 function copyText(text){
-  try {
-    navigator.clipboard.writeText(text).then(() => { toast('اتنسخ'); render(); }, () => { ui.modal = {kind:'copy', text}; render(); });
-  } catch(e){ ui.modal = {kind:'copy', text}; render(); }
+  try { navigator.clipboard.writeText(text).then(() => { toast('اتنسخ'); render(); }, () => { ui.modal = {kind:'copy', text}; render(); }); }
+  catch(e){ ui.modal = {kind:'copy', text}; render(); }
 }
 function tsv(list){
   const head = ['التاريخ','الوقت','المحل','النوع','الاسم','المبلغ','ملاحظة','سجّلها'];
@@ -430,42 +430,34 @@ function tsv(list){
   return [head.join('\t'), ...rows].join('\n');
 }
 function formErr(msg, id = 'ferr'){ const e = document.getElementById(id); if (e) e.textContent = msg; }
-
-// Forms pass rerender:false so a failed save keeps what was typed.
+// For account changes that must be confirmed by the server before showing them.
 async function act(fn, opts = {}){
   if (ui.busy) return;
   ui.busy = true;
-  const keep = opts.rerender === false, btns = keep ? [...document.querySelectorAll('form button')] : [];
-  if (keep) btns.forEach(b => b.disabled = true); else render();
+  const btns = [...document.querySelectorAll('form button')]; btns.forEach(b => b.disabled = true);
   try {
-    await fn();
-    ui.busy = false;
+    await fn(); ui.busy = false;
     if (me) await refresh().catch(() => {});
     if (opts.done) opts.done();
     render();
   } catch(e){
-    ui.busy = false;
-    const msg = errText(e);
-    if (keep && document.getElementById(opts.errId || 'ferr')){ btns.forEach(b => b.disabled = false); formErr(msg, opts.errId); }
-    else { toast(msg); render(); }
+    ui.busy = false; btns.forEach(b => b.disabled = false);
+    if (document.getElementById(opts.errId || 'ferr')) formErr(errText(e), opts.errId); else { toast(errText(e)); render(); }
   }
 }
 
 /* ---------- actions ---------- */
 async function doLogin(userId, pin){
-  ui.busy = true; render();
+  ui.pinBusy = true; render();
   try {
     const tokens = await fnCall({action:'login', user_id:userId, pin});
-    must(await sb.auth.setSession(tokens));
-    const {data:{user:u}} = await sb.auth.getUser();
-    await loadMe(u.id);
+    const s = must(await sb.auth.setSession(tokens));
+    await loadMe(s.user.id);
     ui.pinUser = null; ui.pin = ''; ui.pinErr = ''; ui.tab = 'kenash';
-  } catch(e){
-    ui.pin = ''; ui.pinErr = errText(e);
-  }
-  ui.busy = false; render();
+  } catch(e){ ui.pin = ''; ui.pinErr = errText(e); }
+  ui.pinBusy = false; render();
 }
-
+const nowIso = () => new Date().toISOString();
 const A = {
   noop(){ return false; },
   closeModal(){ ui.modal = null; },
@@ -474,27 +466,30 @@ const A = {
   loginBack(){ ui.pinUser = null; ui.pinErr = ''; },
   pinBack(){ ui.pin = ui.pin.slice(0, -1); ui.pinErr = ''; },
   pin(v){
-    if (ui.busy) return false;
+    if (ui.pinBusy) return false;
     const u = ui.loginUsers.find(x => x.id === ui.pinUser), len = PIN_LEN[u.role];
     ui.pinErr = ''; ui.pin += v;
     if (ui.pin.length >= len){ doLogin(u.id, ui.pin); return false; }
   },
   logout(){
-    act(async () => {
-      if (chan){ sb.removeChannel(chan); chan = null; }
-      await sb.auth.signOut();
-      me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], closures:[], notes:[]};
-      await loadLogin();
-    });
-    return false;
+    if (DEMO){ location.href = location.pathname; return false; }
+    if (chan){ sb.removeChannel(chan); chan = null; }
+    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], closures:[], notes:[]};
+    sb.auth.signOut().finally(() => loadLogin().then(render));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
   type(v){ ui.modal = {kind:'tx', type:v}; },
   del(v){ ui.modal = {kind:'del', id:v}; },
-  restore(v){ act(async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v)), {done:() => toast('رجعت الحركة')}); return false; },
+  restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
+    op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
   closeDay(){ ui.modal = {kind:'closeDay'}; },
-  confirmClose(){ act(async () => must(await sb.rpc('close_day', {p_shop:ui.shopId})), {done:() => { ui.modal = null; toast('اليومية اتقفلت'); }}); return false; },
-  reopen(v){ act(async () => must(await sb.from('closures').delete().eq('id', v)), {done:() => toast('اليومية اتفتحت تاني')}); return false; },
+  confirmClose(){
+    const sid = ui.shopId;
+    op(() => { S.closures.push({id:uuid(), shopId:sid, date:today(), userId:me.id, ts:Date.now()}); ui.modal = null; toast('اليومية اتقفلت'); },
+       async () => { must(await sb.rpc('close_day', {p_shop:sid})); await refresh(); });
+    return false;
+  },
+  reopen(v){ op(() => { S.closures = S.closures.filter(c => c.id !== v); toast('اليومية اتفتحت'); }, async () => must(await sb.from('closures').delete().eq('id', v))); return false; },
   tab(v){ ui.tab = v; window.scrollTo(0, 0); },
   kshop(v){ ui.kshop = v; },
   copyTxs(){ copyText(tsv(S.txs.filter(t => (ui.f.shop === 'all' || t.shopId === ui.f.shop) && t.date === ui.f.date && live(t)).sort((a, b) => a.ts - b.ts))); return false; },
@@ -508,19 +503,20 @@ const A = {
     return false;
   },
   sendDone(){
-    const id = ui.modal.id;
-    act(async () => must(await sb.from('txs').update({transferred_at:new Date().toISOString()}).eq('id', id)), {done:() => {
+    const t = S.txs.find(x => x.id === ui.modal.id);
+    op(() => {
+      t.transferred = true; t.transferredAt = Date.now();
       const next = pendingList()[0];
       ui.modal = next ? {kind:'send', id:next.id} : null;
-      toast(next ? 'تمام، دي اللي بعدها' : 'كل الحركات اتنقلت لكناش');
-    }});
+      if (!next) toast('كل الحركات اتنقلت لكناش');
+    }, async () => must(await sb.from('txs').update({transferred_at:nowIso()}).eq('id', t.id)), 'ما اتعلّمتش.');
     return false;
   },
-  untransfer(v){ act(async () => must(await sb.from('txs').update({transferred_at:null}).eq('id', v)), {done:() => toast('رجعت لقايمة كناش')}); return false; },
-  ack(v){ act(async () => must(await sb.from('txs').update({delete_ack:true}).eq('id', v))); return false; },
+  untransfer(v){ const t = S.txs.find(x => x.id === v); op(() => { t.transferred = false; t.transferredAt = null; }, async () => must(await sb.from('txs').update({transferred_at:null}).eq('id', v))); return false; },
+  ack(v){ const t = S.txs.find(x => x.id === v); op(() => { t.deleteAck = true; }, async () => must(await sb.from('txs').update({delete_ack:true}).eq('id', v))); return false; },
   toggleUser(v){
     const u = user(v);
-    act(async () => fnCall({action:'set_active', user_id:v, active:!u.active}), {done:() => toast(u.active ? `حساب ${u.name} اتوقف` : `حساب ${u.name} اتشغّل`)});
+    act(async () => { await fnCall({action:'set_active', user_id:v, active:!u.active}); if (DEMO) u.active = !u.active; }, {done:() => toast(u.active ? `حساب ${u.name} اتشغّل` : `حساب ${u.name} اتوقف`)});
     return false;
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
@@ -536,10 +532,9 @@ const F = {
     ui.busy = true; render();
     try {
       const tokens = await fnCall({action:'setup', name, pin});
-      must(await sb.auth.setSession(tokens));
-      const {data:{user:u}} = await sb.auth.getUser();
+      const s = must(await sb.auth.setSession(tokens));
       ui.needsSetup = false;
-      await loadMe(u.id);
+      await loadMe(s.user.id);
       ui.tab = 'set'; toast('الحساب اتعمل. ضيف الكاشيرية من هنا.');
     } catch(e){ ui.busy = false; render(); return formErr(errText(e)); }
     ui.busy = false; render();
@@ -548,44 +543,45 @@ const F = {
     const m = ui.modal;
     const amount = parseFloat(latin(fd.get('amount')).replace(/[,٬\s]/g, '').replace('٫', '.'));
     const v = fd.get('party'), typed = String(document.getElementById('pq').value || '').trim().replace(/\s+/g, ' ');
-    let partyId = v && v !== '__new' ? v : null, newName = null;
+    let partyId = v && v !== '__new' ? v : null, newParty = null;
     if (!partyId){
-      // typed a name without tapping it: use the existing one if it matches, otherwise add it
       const hit = typed && S.parties.find(p => norm(p.name) === norm(typed));
-      if (hit) partyId = hit.id; else if (typed) newName = typed;
-      else return formErr('اكتب الاسم.');
+      if (hit) partyId = hit.id;
+      else if (typed){ newParty = {id:uuid(), name:typed, phone:null}; partyId = newParty.id; }
+      else return formErr('اكتب الاسم أو اختار من الأسامي.');
     }
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
     const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
-    const row = {shop_id:shopId, type:m.type, amount, note:String(fd.get('note') || '').trim()};
-    act(async () => {
-      if (newName){
-        const id = crypto.randomUUID();
-        must(await sb.from('parties').insert({id, kind:'customer', name:newName}));
-        partyId = id;
-      }
-      must(await sb.from('txs').insert({...row, party_id:partyId}));
-    }, {rerender:false, done:() => { ui.modal = null; toast('اتسجلت'); }});
+    const note = String(fd.get('note') || '').trim();
+    const tx = {id:uuid(), ts:Date.now(), date:today(), shopId, userId:me.id, type:m.type, partyId, amount, note,
+      afterClose:!!closureOf(shopId, today()), deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
+    op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`); },
+      async () => {
+        if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
+        must(await sb.from('txs').insert({id:tx.id, shop_id:shopId, type:m.type, party_id:partyId, amount, note}));
+        tx.pending = false; softRender();
+      }, 'الحركة ما اتسجلتش.');
   },
   delf(fd){
-    const id = ui.modal.id, reason = String(fd.get('reason') || '').trim();
-    act(async () => must(await sb.rpc('delete_tx', {p_id:id, p_reason:reason})), {rerender:false, done:() => { ui.modal = null; toast('اتمسحت'); }});
+    const t = S.txs.find(x => x.id === ui.modal.id), reason = String(fd.get('reason') || '').trim();
+    op(() => { t.deleted = {by:me.id, ts:Date.now(), reason}; ui.modal = null; toast('اتمسحت'); },
+       async () => must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:reason})), 'ما اتمسحتش.');
   },
   pinf(fd){
     const u = user(ui.modal.id), len = PIN_LEN[u.role], pin = latin(fd.get('pin')).trim();
     if (!new RegExp(`^\\d{${len}}$`).test(pin)) return formErr(`الرقم السري لازم يكون ${len} أرقام.`);
-    act(async () => fnCall({action:'set_pin', user_id:u.id, pin}), {rerender:false, done:() => { ui.modal = null; toast('الرقم السري اتغيّر'); }});
+    act(async () => fnCall({action:'set_pin', user_id:u.id, pin}), {done:() => { ui.modal = null; toast('الرقم السري اتغيّر'); }});
   },
   userf(fd){
     const name = String(fd.get('name') || '').trim(), pin = latin(fd.get('pin')).trim();
     if (!name) return formErr('اكتب اسم الكاشير.', 'uerr');
     if (!/^\d{4}$/.test(pin)) return formErr('الرقم السري لازم يكون 4 أرقام.', 'uerr');
-    act(async () => fnCall({action:'create_user', name, pin}), {rerender:false, errId:'uerr', done:() => toast(`${name} اتضاف`)});
+    act(async () => { await fnCall({action:'create_user', name, pin}); if (DEMO) S.users.push({id:uuid(), name, role:'cashier', active:true}); }, {errId:'uerr', done:() => toast(`${name} اتضاف`)});
   },
   shopsf(fd){
-    act(async () => {
-      for (const s of S.shops){ const n = String(fd.get(s.id) || '').trim(); if (n && n !== s.name) must(await sb.from('shops').update({name:n}).eq('id', s.id)); }
-    }, {rerender:false, done:() => toast('الأسامي اتحفظت')});
+    const changes = S.shops.map(s => [s, String(fd.get(s.id) || '').trim()]).filter(([s, n]) => n && n !== s.name);
+    op(() => { changes.forEach(([s, n]) => s.name = n); toast('الأسامي اتحفظت'); },
+       async () => { for (const [s, n] of changes) must(await sb.from('shops').update({name:n}).eq('id', s.id)); });
   }
 };
 
@@ -602,7 +598,11 @@ document.addEventListener('change', e => {
     ui.f.date = el.value || today(); render();
     if (ui.f.date < addDays(today(), -45) && !extraDays.has(ui.f.date)) fetchDay(ui.f.date).catch(() => toast('ما قدرتش أجيب اليوم ده'));
   }
-  else if (el.name === 'party'){ document.getElementById('f-amount')?.focus(); }
+  else if (el.name === 'party'){
+    const p = el.value === '__new' ? null : party(el.value), pq = document.getElementById('pq');
+    if (p && pq) pq.value = p.name;
+    document.getElementById('f-amount')?.focus();
+  }
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'pq'){
@@ -610,22 +610,41 @@ document.addEventListener('input', e => {
     pl.innerHTML = nameOptions(e.target.value, sel === '__new' ? null : sel);
   }
 });
-document.addEventListener('submit', e => {
-  e.preventDefault();
-  const fn = F[e.target.id]; if (fn) fn(new FormData(e.target));
-});
+document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn) fn(new FormData(e.target)); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ui.modal){ ui.modal = null; render(); }
   if (!me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
 });
 document.addEventListener('focusout', () => setTimeout(() => { if (ui.dirty && !ui.modal) softRender(); }, 50));
-window.addEventListener('online', () => { ui.offline = false; if (me) scheduleRefresh(); else loadLogin().then(render); });
+window.addEventListener('online', () => { ui.offline = false; if (me) refresh().then(render).catch(() => {}); else loadLogin().then(render); });
 window.addEventListener('offline', () => { ui.offline = true; render(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && me) scheduleRefresh(); });
+// Catch up on anything missed while the phone was asleep.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && me && !DEMO) refresh().then(softRender).catch(() => {}); });
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ui.installEvt = e; render(); });
-sb.auth.onAuthStateChange((evt) => { if (evt === 'SIGNED_OUT' && me){ me = null; loadLogin().then(render); } });
+sb.auth.onAuthStateChange(evt => { if (evt === 'SIGNED_OUT' && me && !DEMO){ me = null; loadLogin().then(render); } });
+
+function demoData(role){
+  const t = today(), y = addDays(t, -1), at = (ds, h, m) => { const [Y, M, D] = ds.split('-').map(Number); return new Date(Y, M - 1, D, h, m).getTime(); };
+  const users = [{id:'u0', name:'هشام', role:'admin', active:true}, {id:'u1', name:'أحمد', role:'cashier', active:true}, {id:'u2', name:'محمود', role:'cashier', active:true}];
+  const shops = [{id:'s1', name:'المحل الأول'}, {id:'s2', name:'المحل التاني'}];
+  const parties = ['محمد عبد الله', 'سيد حسن', 'أم كريم', 'مصطفى الميكانيكي', 'عمر', 'مخزن النور'].map((name, i) => ({id:'p' + i, name, phone:null}));
+  const tx = (id, date, h, m, shopId, userId, type, p, amount, note = '', extra = {}) => ({id, ts:at(date, h, m), date, shopId, userId, type, partyId:'p' + p, amount, note, afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, ...extra});
+  const txs = [
+    tx('t1', y, 18, 5, 's1', 'u1', 'gave', 2, 350, 'جراب + سكرينة', {transferred:true, transferredAt:at(y, 22, 0)}),
+    tx('t2', t, 10, 15, 's1', 'u1', 'gave', 0, 500, 'شاحن سامسونج'),
+    tx('t3', t, 10, 50, 's1', 'u1', 'took', 1, 200),
+    tx('t4', t, 11, 30, 's2', 'u2', 'took', 3, 1750, 'دفعة من الحساب'),
+    tx('t5', t, 12, 40, 's1', 'u1', 'gave', 5, 2000, 'دفعة لحساب أكتوبر'),
+    tx('t6', t, 13, 10, 's2', 'u2', 'gave', 4, 950, 'سماعة بلوتوث'),
+    tx('t7', t, 14, 0, 's1', 'u1', 'took', 0, 150)];
+  const notes = [{id:'n1', ts:at(t, 14, 0), read:false, text:'أحمد: أخدت من محمد عبد الله 150 ج.م (المحل الأول)'}, {id:'n2', ts:at(t, 13, 10), read:false, text:'محمود: أعطيت لـ مصطفى الميكانيكي 950 ج.م (المحل التاني)'}];
+  S = {shops, users, parties, txs, closures:[], notes};
+  me = users.find(u => u.role === (role === 'admin' ? 'admin' : 'cashier'));
+  ui.shopId = 's1';
+}
 
 (async function boot(){
+  if (DEMO){ demoData(DEMO); ui.booting = false; render(); return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
     const {data:{session}} = await sb.auth.getSession();
