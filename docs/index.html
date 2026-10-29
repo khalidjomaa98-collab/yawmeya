@@ -177,7 +177,67 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .login .card{color:var(--ink)}
 .back{border:0;background:none;color:var(--brand-ink);font-weight:600;align-self:flex-start;padding:4px 0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;z-index:40;max-width:calc(100% - 32px);text-align:center;box-shadow:var(--shadow)}
-@media (prefers-reduced-motion:no-preference){.sheet{animation:up .2s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.5}}}
+
+/* ---------- motion ---------- */
+.act,.btn,.kp button,.pad button,.ubtn,.pick span{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.18;transform:scale(0);pointer-events:none;animation:ripple .6s ease-out forwards}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:50}
+.confetti i{position:absolute;left:50%;bottom:20%;width:9px;height:14px;border-radius:2px;animation:confetti 1.6s cubic-bezier(.2,.7,.3,1) forwards}
+@media (prefers-reduced-motion:no-preference){
+  .band.enter{animation:dropIn .5s cubic-bezier(.2,.8,.2,1) both}
+  .band{background-size:160% 160%;animation:bandShift 14s ease-in-out infinite alternate}
+  .band.enter{animation:dropIn .5s cubic-bezier(.2,.8,.2,1) both, bandShift 14s ease-in-out .5s infinite alternate}
+  .wrap.enter{animation:fadeUp .45s .08s cubic-bezier(.2,.8,.2,1) both}
+  .wrap.enter .act{animation:popIn .5s cubic-bezier(.3,1.5,.5,1) both}
+  .wrap.enter .act:nth-child(1){animation-delay:.12s} .wrap.enter .act:nth-child(2){animation-delay:.2s}
+  .login .in.enter > *{animation:fadeUp .5s cubic-bezier(.2,.8,.2,1) both}
+  .login .in.enter > *:nth-child(2){animation-delay:.06s} .login .in.enter > *:nth-child(3){animation-delay:.12s} .login .in.enter > *:nth-child(4){animation-delay:.18s} .login .in.enter > *:nth-child(5){animation-delay:.24s}
+  .act .ic{animation:float 3.2s ease-in-out infinite}
+  .act.gave .ic{animation-delay:1.6s}
+  .act:active .ic{transform:scale(.9)}
+  .item.rise{animation:fadeUp .4s cubic-bezier(.2,.8,.2,1) both}
+  .item.pop{animation:slideIn .45s cubic-bezier(.2,.9,.3,1.2) both, flash 1.4s ease-out both}
+  .item{transition:background .2s}
+  .overlay{animation:fade .2s ease-out both}
+  .overlay .sheet{animation:sheetUp .38s cubic-bezier(.2,.9,.3,1.05) both}
+  .overlay.still,.overlay.still .sheet{animation:none}
+  .sheet .names .pick{animation:popIn .35s cubic-bezier(.3,1.5,.5,1) both}
+  .sheet .names .pick:nth-child(2){animation-delay:.03s} .sheet .names .pick:nth-child(3){animation-delay:.06s} .sheet .names .pick:nth-child(4){animation-delay:.09s}
+  .sheet .names .pick:nth-child(5){animation-delay:.12s} .sheet .names .pick:nth-child(6){animation-delay:.15s} .sheet .names .pick:nth-child(n+7){animation-delay:.18s}
+  .pick input:checked+span{animation:pick .3s cubic-bezier(.3,1.6,.5,1)}
+  .amtbox.bump{animation:bump .18s ease-out}
+  .kp button:active,.pad button:active{transform:scale(.92)}
+  .kp button,.pad button,.act,.btn{transition:transform .1s, background .15s}
+  .btn:active{transform:scale(.97)}
+  .kstep .av{animation:popIn .5s cubic-bezier(.3,1.6,.5,1) both}
+  .kstep .bignum{animation:popIn .5s .1s cubic-bezier(.3,1.6,.5,1) both}
+  .kstep.swap{animation:swapIn .4s cubic-bezier(.2,.9,.3,1.1) both}
+  .dots span{transition:background .15s, border-color .15s}
+  .dots span.pop{animation:dot .25s cubic-bezier(.3,1.8,.5,1)}
+  .dots.shake{animation:shake .45s}
+  .toast{animation:toastIn .4s cubic-bezier(.2,1.4,.4,1) both}
+  .badge{animation:popIn .4s cubic-bezier(.3,1.8,.5,1) both}
+  .nav button.on svg{animation:popIn .35s cubic-bezier(.3,1.8,.5,1)}
+  .empty{animation:fadeUp .5s .1s both}
+}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+@keyframes confetti{0%{transform:translate(-50%,0) rotate(0);opacity:1}100%{transform:translate(calc(-50% + var(--x)),var(--y)) rotate(var(--r));opacity:0}}
+@keyframes dropIn{from{transform:translateY(-24px);opacity:0}}
+@keyframes bandShift{from{background-position:0% 0%}to{background-position:100% 100%}}
+@keyframes fadeUp{from{transform:translateY(16px);opacity:0}}
+@keyframes popIn{from{transform:scale(.6);opacity:0}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0}}
+@keyframes flash{0%,30%{background:var(--took-soft)}100%{background:transparent}}
+@keyframes fade{from{opacity:0}}
+@keyframes sheetUp{from{transform:translateY(60%);opacity:.3}}
+@keyframes pick{50%{transform:scale(1.12)}}
+@keyframes bump{50%{transform:scale(1.1)}}
+@keyframes swapIn{from{transform:translateX(-60px);opacity:0}}
+@keyframes dot{50%{transform:scale(1.45)}}
+@keyframes shake{20%,60%{transform:translateX(-10px)}40%,80%{transform:translateX(10px)}}
+@keyframes toastIn{from{transform:translate(-50%,40px);opacity:0}}
+
 
 /* amount pad */
 .amtbox{text-align:center;font-size:2.8rem;font-weight:700;line-height:1.1;padding:6px 0}
@@ -199,7 +259,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

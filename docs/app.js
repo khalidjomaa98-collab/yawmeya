@@ -47,7 +47,7 @@ const icon = {
 };
 
 /* ---------- state ---------- */
-let S = {shops:[], users:[], parties:[], txs:[], closures:[], notes:[]};
+let S = {shops:[], users:[], parties:[], txs:[], notes:[]};
 let me = null;
 const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'', pinBusy:false, busy:false,
   shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all', date:today()},
@@ -56,7 +56,6 @@ const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'',
 const user = id => S.users.find(u => u.id === id);
 const shop = id => S.shops.find(s => s.id === id);
 const party = id => S.parties.find(p => p.id === id);
-const closureOf = (shopId, date) => S.closures.find(c => c.shopId === shopId && c.date === date);
 const live = t => !t.deleted;
 const pname = t => party(t.partyId)?.name || '—';
 const pendingList = () => S.txs.filter(t => live(t) && !t.transferred && (ui.kshop === 'all' || t.shopId === ui.kshop)).sort((a, b) => a.ts - b.ts);
@@ -69,7 +68,6 @@ const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id,
   amount:Number(r.amount), note:r.note || '', afterClose:r.after_close, deleteAck:r.delete_ack,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
   transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null});
-const mapClosure = r => ({id:r.id, shopId:r.shop_id, date:r.day, userId:r.user_id, ts:Date.parse(r.ts)});
 const mapNote = n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
@@ -78,18 +76,16 @@ async function refresh(){
   if (DEMO) return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
-  const [shops, users, parties, closures, txs, notes] = await Promise.all([
+  const [shops, users, parties, txs, notes] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
     sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
     sb.from('parties').select('id,name,phone').order('name'),
-    sb.from('closures').select('*').gte('day', admin ? from : t),
     admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq.eq('day', t),
     admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]})
   ]);
   S.shops = must(shops);
   S.users = must(users);
   S.parties = must(parties);
-  S.closures = must(closures).map(mapClosure);
   const pend = S.txs.filter(t => t.pending);
   S.txs = must(txs).map(mapTx);
   pend.forEach(p => { if (!S.txs.some(t => t.id === p.id)) S.txs.push(p); });
@@ -101,9 +97,8 @@ async function refresh(){
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
   extraDays.add(d);
-  const [txs, cl] = await Promise.all([sb.from('txs').select('*').eq('day', d), sb.from('closures').select('*').eq('day', d)]);
+  const txs = await sb.from('txs').select('*').eq('day', d);
   must(txs).map(mapTx).forEach(t => upsert(S.txs, t));
-  must(cl).map(mapClosure).forEach(c => upsert(S.closures, c));
   if (rerender) render();
 }
 
@@ -113,13 +108,12 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'closures', 'parties']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
-  else if (table === 'closures'){ if (del) S.closures = S.closures.filter(c => c.id !== old.id); else upsert(S.closures, mapClosure(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && me?.role === 'admin'){
     if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
@@ -159,7 +153,7 @@ async function fnCall(body){
 }
 function errText(e){
   const m = String(e?.code || e?.message || '');
-  if (m.includes('DAY_CLOSED')) return 'يومية المحل ده اتقفلت. كلّم هشام يفتحها.';
+  if (m.includes('NO_SHOP')) return 'هشام لسه ما حددلكش أنهي محل.';
   if (m.includes('PARTY_REQUIRED')) return 'اكتب الاسم الأول.';
   if (m === 'wrong') return 'الرقم غلط، جرّب تاني.';
   if (m === 'locked') return 'اتكتب رقم غلط كتير. استنى 10 دقايق وجرّب تاني.';
@@ -194,7 +188,7 @@ function band(inner){
     </div></header>
     ${ui.offline ? `<div class="offline">مفيش نت. اللي هتسجله مش هيتحفظ لحد ما النت يرجع.</div>` : ''}`;
 }
-const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t">${nf(r.gave)}</b></div></div>`;
+const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
 const shopPills = (cur, action, all) => (S.shops.length < 2 && !all) ? '' :
   `<div class="shops">${[...(all ? [['all', 'المحلين']] : []), ...S.shops.map(s => [s.id, s.name])].map(([id, n]) => `<button class="${cur === id ? 'on' : ''}" data-a="${action}" data-v="${id}">${esc(n)}</button>`).join('')}</div>`;
 
@@ -208,9 +202,8 @@ function item(x, o = {}){
   let end = o.end || '';
   if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`;
   if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
-  const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>`
-    : (o.admin && x.afterClose ? `<small class="flag">اتسجلت بعد الإقفال</small>` : '');
-  return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
+  const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>` : '';
+  return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" data-id="${x.id}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
     ${avatar(pname(x))}
     <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${flag}</div>
     <div class="end"><span class="amt ${x.type}-t">${money(x.amount)}</span>${end}</div></li>`;
@@ -253,19 +246,16 @@ function renderLogin(){
 function renderCashier(){
   const t = today(), s = shop(me.shop_id);
   if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
-  const cl = closureOf(s.id, t);
   const list = dayList(s.id, t).filter(live).sort((a, b) => b.ts - a.ts);
   return `${band(sumBox(totals(list)))}
   <main class="wrap gut">
     <div class="acts">
-      <button class="act took" data-a="type" data-v="took" ${cl ? 'disabled' : ''}><span class="ic">${icon.took}</span>أخدت</button>
-      <button class="act gave" data-a="type" data-v="gave" ${cl ? 'disabled' : ''}><span class="ic">${icon.gave}</span>أعطيت</button>
+      <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
+      <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
     </div>
-    ${cl ? `<div class="banner">اليومية اتقفلت الساعة ${tm(cl.ts)}. لو محتاج تسجل حاجة، كلّم هشام يفتحها.</div>` : ''}
     <section><div class="head"><h2>حركات النهارده</h2><span class="muted small num">${list.length}</span></div>
       ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
     </section>
-    ${cl ? '' : `<button class="btn wide" data-a="closeDay" ${list.length ? '' : 'disabled'}>اقفل يومية النهارده</button>`}
   </main>`;
 }
 
@@ -301,9 +291,8 @@ function tabTxs(){
   return `<div class="card"><div class="row2">
       <div class="field"><label for="fdate">اليوم</label><input type="date" id="fdate" data-c="fdate" value="${f.date}" max="${today()}"></div>
       <div class="field"><label for="fshop">المحل</label><select id="fshop" data-c="fshop"><option value="all">المحلين</option>${S.shops.map(s => `<option value="${s.id}" ${f.shop === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div></div>
-      ${(f.shop === 'all' ? S.shops : [shop(f.shop)]).map(s => { const cl = closureOf(s.id, f.date); const r = totals(dayList(s.id, f.date));
-        return `<div class="head small"><span><b>${esc(s.name)}</b> · <span class="took-t num">${nf(r.took)}</span> / <span class="gave-t num">${nf(r.gave)}</span></span>
-          ${cl ? `<span class="muted">اتقفلت ${tm(cl.ts)} <button class="btn link" data-a="reopen" data-v="${cl.id}">افتحها</button></span>` : `<span class="muted">مفتوحة</span>`}</div>`; }).join('')}</div>
+      ${(f.shop === 'all' ? S.shops : [shop(f.shop)]).map(s => { const r = totals(dayList(s.id, f.date));
+        return `<div class="head small"><span><b>${esc(s.name)}</b> · <span class="took-t num">${nf(r.took)}</span> / <span class="gave-t num">${nf(r.gave)}</span></span></div>`; }).join('')}</div>
     ${list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
         end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
       : `<p class="empty">مفيش حركات في اليوم ده.</p>`}`;
@@ -380,14 +369,6 @@ function renderModal(){
       <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
       <button class="btn danger wide">امسح</button></form>`);
   }
-  if (m.kind === 'closeDay'){
-    const r = totals(dayList(ui.shopId, today()));
-    return sheet(`<h2>اقفل يومية ${esc(shop(ui.shopId).name)}</h2>`, `
-      <div class="row2"><div class="card" style="box-shadow:none;background:var(--took-soft)"><small class="muted">أخدت</small><b class="num took-t" style="font-size:1.4rem">${nf(r.took)}</b></div>
-        <div class="card" style="box-shadow:none;background:var(--gave-soft)"><small class="muted">أعطيت</small><b class="num gave-t" style="font-size:1.4rem">${nf(r.gave)}</b></div></div>
-      <p class="muted small">بعد الإقفال مش هتقدر تسجل تاني النهارده في المحل ده إلا لو هشام فتحها.</p>
-      <button class="btn primary wide" data-a="confirmClose">اقفل</button>`);
-  }
   if (m.kind === 'pin'){
     const u = user(m.id), len = PIN_LEN[u.role];
     return sheet(`<h2>رقم سري جديد لـ${esc(u.name)}</h2>`, `<form id="pinf">
@@ -397,19 +378,72 @@ function renderModal(){
   return '';
 }
 
+/* ---------- motion ---------- */
+const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function countUp(el, from, to){
+  if (calm()) return;
+  const t0 = performance.now(), dur = 650;
+  const step = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = nf(Math.round(from + (to - from) * e)); if (p < 1) requestAnimationFrame(step); else el.textContent = nf(to); };
+  requestAnimationFrame(step);
+}
+function confetti(){
+  if (calm()) return;
+  const box = document.createElement('div'); box.className = 'confetti';
+  const colors = ['#0b8a4a', '#d33a2f', '#f5c542', '#2f6fd6', '#8a4fd1'];
+  for (let i = 0; i < 40; i++){
+    const p = document.createElement('i');
+    p.style.cssText = `--x:${(Math.random() * 2 - 1) * 46}vw;--y:${-30 - Math.random() * 50}vh;--r:${Math.random() * 720 - 360}deg;background:${colors[i % colors.length]};animation-delay:${Math.random() * 120}ms`;
+    box.appendChild(p);
+  }
+  document.body.appendChild(box); setTimeout(() => box.remove(), 1800);
+}
+// touch ripple on buttons
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('.act, .btn, .kp button, .pad button, .ubtn, .pick span'); if (!b || calm()) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.2, sp = document.createElement('span');
+  sp.className = 'ripple'; sp.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+  b.appendChild(sp); setTimeout(() => sp.remove(), 600);
+});
+
 /* ---------- render ---------- */
 let toastTimer;
 function toast(t, undoId){
   ui.toast = {t, undoId}; clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { ui.toast = null; document.querySelector('.toast')?.remove(); }, undoId ? 5000 : 2600);
 }
+let lastView = '', lastSendId = null;
+const seen = new Set(), counts = {};
+const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
 function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
+  const view = ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
+  const hadModal = !!app.querySelector('.overlay');
   let h = ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += me ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
+  // whole screen slides in when you move to a different screen
+  const entering = view !== lastView; lastView = view;
+  if (entering) app.querySelectorAll('.band, .wrap, .login .in').forEach(el => el.classList.add('enter'));
+  // list rows: stagger on a new screen, otherwise only rows that just arrived
+  let i = 0;
+  app.querySelectorAll('.item[data-id]').forEach(el => {
+    const id = el.dataset.id;
+    if (entering || !seen.has(id)){ el.classList.add(entering ? 'rise' : 'pop'); el.style.animationDelay = (entering ? Math.min(i++, 10) * 40 : 0) + 'ms'; }
+    seen.add(id);
+  });
+  // totals count up to their new value
+  app.querySelectorAll('[data-count]').forEach(el => {
+    const k = el.dataset.count, to = Number(el.dataset.val), from = counts[k] ?? (entering ? 0 : to);
+    counts[k] = to;
+    if (from !== to) countUp(el, from, to);
+  });
+  const ov = app.querySelector('.overlay');
+  if (ov && hadModal) ov.classList.add('still');
+  if (ui.modal?.kind === 'send'){ const k = app.querySelector('.kstep'); if (k && lastSendId && lastSendId !== ui.modal.id) k.classList.add('swap'); lastSendId = ui.modal.id; }
+  else lastSendId = null;
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
   if (me?.role === 'admin' && ui.tab === 'notes' && S.notes.some(n => !n.read)){
     const ids = S.notes.filter(n => !n.read).map(n => n.id);
@@ -444,6 +478,7 @@ async function doLogin(userId, pin){
     ui.pinUser = null; ui.pin = ''; ui.pinErr = ''; ui.tab = 'kenash';
   } catch(e){ ui.pin = ''; ui.pinErr = errText(e); }
   ui.pinBusy = false; render();
+  if (ui.pinErr){ const d = document.querySelector('.dots'); if (d) replay(d, 'shake'); try { navigator.vibrate?.([40, 40, 40]); } catch(_){} }
 }
 const nowIso = () => new Date().toISOString();
 const A = {
@@ -458,11 +493,12 @@ const A = {
     const u = ui.loginUsers.find(x => x.id === ui.pinUser), len = PIN_LEN[u.role];
     ui.pinErr = ''; ui.pin += v;
     if (ui.pin.length >= len){ doLogin(u.id, ui.pin); return false; }
+    render(); const d = document.querySelectorAll('.dots span.f'); if (d.length) replay(d[d.length - 1], 'pop'); return false;
   },
   logout(){
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
-    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], closures:[], notes:[]};
+    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[]};
     sb.auth.signOut().finally(() => loadLogin().then(render));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
@@ -471,7 +507,7 @@ const A = {
     const m = ui.modal; let a = m.amt || '';
     if (v === '⌫') a = a.slice(0, -1); else if (a.length < 9) a = (a + v).replace(/^0+/, '');
     m.amt = a;
-    const el = document.querySelector('#amt .num'); if (el) el.textContent = a ? Number(a).toLocaleString('en-US') : '0';
+    const el = document.querySelector('#amt .num'); if (el){ el.textContent = a ? Number(a).toLocaleString('en-US') : '0'; replay(el.parentNode, 'bump'); }
     try { navigator.vibrate?.(8); } catch(e){}
     return false;
   },
@@ -485,14 +521,6 @@ const A = {
   del(v){ ui.modal = {kind:'del', id:v}; },
   restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
     op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
-  closeDay(){ ui.modal = {kind:'closeDay'}; },
-  confirmClose(){
-    const sid = ui.shopId;
-    op(() => { S.closures.push({id:uuid(), shopId:sid, date:today(), userId:me.id, ts:Date.now()}); ui.modal = null; toast('اليومية اتقفلت'); },
-       async () => { must(await sb.rpc('close_day', {p_shop:sid})); await refresh(); });
-    return false;
-  },
-  reopen(v){ op(() => { S.closures = S.closures.filter(c => c.id !== v); toast('اليومية اتفتحت'); }, async () => must(await sb.from('closures').delete().eq('id', v))); return false; },
   tab(v){ ui.tab = v; window.scrollTo(0, 0); },
   kshop(v){ ui.kshop = v; },
   send(v){ ui.modal = {kind:'send', id:v}; },
@@ -510,7 +538,7 @@ const A = {
       t.transferred = true; t.transferredAt = Date.now();
       const next = pendingList()[0];
       ui.modal = next ? {kind:'send', id:next.id} : null;
-      if (!next) toast('كل الحركات اتنقلت لكناش');
+      if (!next){ toast('كل الحركات اتنقلت لكناش 🎉'); setTimeout(confetti, 60); }
     }, async () => must(await sb.from('txs').update({transferred_at:nowIso()}).eq('id', t.id)), 'ما اتعلّمتش.');
     return false;
   },
@@ -556,7 +584,7 @@ const F = {
     const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
     const note = String(fd.get('note') || '').trim();
     const tx = {id:uuid(), ts:Date.now(), date:today(), shopId, userId:me.id, type:m.type, partyId, amount, note,
-      afterClose:!!closureOf(shopId, today()), deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
+      afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
     op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
       async () => {
         if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
@@ -650,7 +678,7 @@ function demoData(role){
     tx('t6', t, 13, 10, 's2', 'u2', 'gave', 4, 950, 'سماعة بلوتوث'),
     tx('t7', t, 14, 0, 's1', 'u1', 'took', 0, 150)];
   const notes = [{id:'n1', ts:at(t, 14, 0), read:false, text:'أحمد: أخدت من محمد عبد الله 150 ج.م (المحل الأول)'}, {id:'n2', ts:at(t, 13, 10), read:false, text:'محمود: أعطيت لـ مصطفى الميكانيكي 950 ج.م (المحل التاني)'}];
-  S = {shops, users, parties, txs, closures:[], notes};
+  S = {shops, users, parties, txs, notes};
   me = users.find(u => u.role === (role === 'admin' ? 'admin' : 'cashier'));
   ui.shopId = 's1';
 }
