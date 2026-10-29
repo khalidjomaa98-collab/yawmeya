@@ -47,7 +47,7 @@ const icon = {
 };
 
 /* ---------- state ---------- */
-let S = {shops:[], users:[], parties:[], txs:[], notes:[]};
+let S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[]};
 let me = null;
 const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'', pinBusy:false, busy:false,
   shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all'}, openDays:new Set([today()]), wipeOk:false,
@@ -59,7 +59,8 @@ const party = id => S.parties.find(p => p.id === id);
 const live = t => !t.deleted;
 const pname = t => party(t.partyId)?.name || '—';
 const pendingList = () => S.txs.filter(t => live(t) && !t.transferred && (ui.kshop === 'all' || t.shopId === ui.kshop)).sort((a, b) => a.ts - b.ts);
-const dayList = (shopId, date) => S.txs.filter(t => t.shopId === shopId && t.date === date);
+const openDay = shopId => S.days.find(d => d.shopId === shopId && !d.closedAt);
+const dayTxs = d => S.txs.filter(t => t.dayId === d.id);
 function totals(list){ const r = {took:0, gave:0, count:0}; list.filter(live).forEach(t => { r[t.type] += t.amount; r.count++; }); return r; }
 const upsert = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if (i >= 0) arr[i] = row; else arr.push(row); };
 
@@ -67,7 +68,8 @@ const upsert = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if
 const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id, userId:r.user_id, type:r.type, partyId:r.party_id,
   amount:Number(r.amount), note:r.note || '', afterClose:r.after_close, deleteAck:r.delete_ack,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
-  transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null});
+  transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null, dayId:r.day_id});
+const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at), openedBy:r.opened_by, closedAt:r.closed_at ? Date.parse(r.closed_at) : null, closedBy:r.closed_by});
 const mapNote = n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
@@ -76,12 +78,13 @@ async function refresh(){
   if (DEMO) return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
-  const [shops, users, parties, txs, notes] = await Promise.all([
+  const [shops, users, parties, txs, notes, days] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
     sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
     sb.from('parties').select('id,name,phone').order('name'),
-    admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq.eq('day', t),
-    admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]})
+    admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq,
+    admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
+    admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null)
   ]);
   S.shops = must(shops);
   S.users = must(users);
@@ -90,6 +93,7 @@ async function refresh(){
   S.txs = must(txs).map(mapTx);
   pend.forEach(p => { if (!S.txs.some(t => t.id === p.id)) S.txs.push(p); });
   S.notes = must(notes).map(mapNote);
+  S.days = must(days).map(mapDay);
   for (const d of extraDays) await fetchDay(d, false);
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
@@ -97,8 +101,10 @@ async function refresh(){
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
   extraDays.add(d);
-  const txs = await sb.from('txs').select('*').eq('day', d);
-  must(txs).map(mapTx).forEach(t => upsert(S.txs, t));
+  const list = must(await sb.from('txs').select('*').eq('day', d)).map(mapTx);
+  list.forEach(t => upsert(S.txs, t));
+  const ids = [...new Set(list.map(t => t.dayId).filter(Boolean))];
+  if (ids.length) must(await sb.from('shop_days').select('*').in('id', ids)).map(mapDay).forEach(x => upsert(S.days, x));
   if (rerender) render();
 }
 
@@ -108,12 +114,13 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties', 'shop_days']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
+  else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && me?.role === 'admin'){
     if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
@@ -153,7 +160,7 @@ async function fnCall(body){
 }
 function errText(e){
   const m = String(e?.code || e?.message || '');
-  if (m.includes('NO_SHOP')) return 'هشام لسه ما حددلكش أنهي محل.';
+  if (m.includes('NO_SHOP') || m === 'no_shop') return 'هشام لسه ما حددلكش أنهي محل.';
   if (m.includes('PARTY_REQUIRED')) return 'اكتب الاسم الأول.';
   if (m === 'wrong') return 'الرقم غلط، جرّب تاني.';
   if (m === 'locked') return 'اتكتب رقم غلط كتير. استنى 10 دقايق وجرّب تاني.';
@@ -243,18 +250,22 @@ function renderLogin(){
 }
 
 function renderCashier(){
-  const t = today(), s = shop(me.shop_id);
+  const s = shop(me.shop_id);
   if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
-  const list = dayList(s.id, t).filter(live).sort((a, b) => b.ts - a.ts);
-  return `${band(sumBox(totals(list)), true)}
+  const od = openDay(s.id);
+  const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
+  const longOpen = od && Date.now() - od.openedAt > 18 * 3600e3;
+  return `${band(sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم مفتوح من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
     </div>
-    <section><div class="head"><h2>حركات النهارده</h2><span class="muted small num">${list.length}</span></div>
+    ${longOpen ? `<div class="banner">اليوم ده مفتوح من ${dayLabel(dayOf(od.openedAt))}. لو خلّصت، اقفله.</div>` : ''}
+    <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length}</span></div>
       ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
     </section>
+    ${od ? `<button class="btn wide" data-a="closeDay">🔒 اقفل اليوم</button>` : ''}
   </main>`;
 }
 
@@ -285,21 +296,21 @@ function tabKenash(){
       <ul class="list">${recent.map(x => item(x, {date:true, end:`<button class="btn link" data-a="untransfer" data-v="${x.id}">رجّعها</button>`})).join('')}</ul></section>` : ''}`;
 }
 function tabTxs(){
-  const f = ui.f, inShop = t => f.shop === 'all' || t.shopId === f.shop;
-  const days = [...new Set(S.txs.filter(inShop).map(t => t.date))].sort().reverse();
-  if (!days.includes(today())) days.unshift(today());
+  const f = ui.f;
+  const days = S.days.filter(d => f.shop === 'all' || d.shopId === f.shop).sort((a, b) => (a.closedAt ? 1 : 0) - (b.closedAt ? 1 : 0) || b.openedAt - a.openedAt);
   return `${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
-    ${days.map(d => {
-      const list = S.txs.filter(t => inShop(t) && t.date === d).sort((a, b) => b.ts - a.ts), r = totals(list), open = ui.openDays.has(d);
+    ${days.length ? days.map(d => {
+      const list = dayTxs(d).sort((a, b) => b.ts - a.ts), r = totals(list), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
       return `<section class="day ${open ? 'open' : ''}">
-        <button class="dayrow" data-a="toggleDay" data-v="${d}" aria-expanded="${open}">
-          <span class="dname"><b>${dayLabel(d)}</b><small>${r.count} حركة</small></span>
+        <button class="dayrow" data-a="toggleDay" data-v="${d.id}" aria-expanded="${open}">
+          <span class="dname"><b>${dayLabel(dayOf(d.openedAt))}${f.shop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</b>
+            <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة</small></span>
           <span class="dtot"><span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
-        ${open ? (list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
+        ${open ? (list.length ? `<ul class="list">${list.map(x => item(x, {who:true, admin:true,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
-          : `<p class="empty">مفيش حركات في اليوم ده.</p>`) : ''}</section>`;
-    }).join('')}
+          : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn" data-a="adminClose" data-v="${d.shopId}">🔒 اقفل اليوم ده</button>`) : ''}</section>`;
+    }).join('') : `<p class="empty">لسه مفيش أيام.</p>`}
     <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
 }
 function tabNotes(){
@@ -375,6 +386,17 @@ function renderModal(){
       <p class="muted small">${admin ? 'هتتعلّم إنها ممسوحة، وتقدر ترجّعها بعدين.' : 'هتختفي من عندك، بس هشام هيشوف إنك مسحتها.'}</p>
       <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
       <button class="btn danger wide">امسح</button></form>`);
+  }
+  if (m.kind === 'closeDay'){
+    const od = openDay(me.shop_id); if (!od){ ui.modal = null; return ''; }
+    const r = totals(dayTxs(od));
+    return sheet(`<h2>اقفل اليوم</h2>`, `
+      <div class="row2"><div class="card flat took-bg"><small class="muted">أخدت</small><b class="num took-t big">${nf(r.took)}</b></div>
+        <div class="card flat gave-bg"><small class="muted">أعطيت</small><b class="num gave-t big">${nf(r.gave)}</b></div></div>
+      <p class="muted small" style="text-align:center">${r.count} حركة من ${tm(od.openedAt)}. اكتب رقمك السري علشان تقفل.</p>
+      <div class="dots dark ${m.err ? 'bad' : ''}">${[0,1,2,3].map(i => `<span class="${i < (m.pin || '').length ? 'f' : ''}"></span>`).join('')}</div>
+      <p class="err" role="alert" style="text-align:center">${m.busy ? '<span class="muted">بيقفل...</span>' : esc(m.err || '')}</p>
+      <div class="kp">${['1','2','3','4','5','6','7','8','9','','0','⌫'].map(k => k ? `<button type="button" data-a="cpin" data-v="${k}" ${m.busy ? 'disabled' : ''}>${k}</button>` : '<span></span>').join('')}</div>`);
   }
   if (m.kind === 'wipe'){
     const n = S.txs.length;
@@ -513,7 +535,7 @@ const A = {
   logout(){
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
-    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[]};
+    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[]};
     sb.auth.signOut().finally(() => loadLogin().then(render));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
@@ -542,7 +564,8 @@ const A = {
   },
   kshop(v){ ui.kshop = v; },
   fshop(v){ ui.f.shop = v; },
-  toggleDay(v){ ui.openDays.has(v) ? ui.openDays.delete(v) : ui.openDays.add(v); },
+  toggleDay(v){ const d = S.days.find(x => x.id === v), wasOpen = ui.openDays.has(v) || (d && !d.closedAt && !ui.openDays.has('x' + v));
+    ui.openDays.delete(v); ui.openDays.delete('x' + v); if (!wasOpen) ui.openDays.add(v); else if (d && !d.closedAt) ui.openDays.add('x' + v); },
   send(v){ ui.modal = {kind:'send', id:v}; },
   sendOpen(v, e){
     const L = window.Capacitor?.Plugins?.AppLauncher;
@@ -571,6 +594,32 @@ const A = {
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
   wipe(){ ui.modal = {kind:'wipe'}; },
+  closeDay(){ ui.modal = {kind:'closeDay', pin:''}; },
+  cpin(v){
+    const m = ui.modal; if (m.busy) return false;
+    m.err = ''; m.pin = v === '⌫' ? m.pin.slice(0, -1) : (m.pin + v).slice(0, 4);
+    if (m.pin.length < 4) return;
+    m.busy = true; render();
+    const sid = me.shop_id;
+    (async () => {
+      try {
+        if (!DEMO) await fnCall({action:'close_day', pin:m.pin});
+        const od = openDay(sid); if (od){ od.closedAt = Date.now(); od.closedBy = me.id; }
+        ui.modal = null; toast('اليوم اتقفل ✓'); setTimeout(confetti, 60);
+        if (!DEMO) refresh().then(render).catch(() => {});
+      } catch(e){
+        m.busy = false; m.pin = ''; m.err = errText(e); render();
+        const d = document.querySelector('.dots'); if (d) replay(d, 'shake');
+      }
+      render();
+    })();
+    return false;
+  },
+  adminClose(v){
+    const od = openDay(v);
+    op(() => { if (od){ od.closedAt = Date.now(); od.closedBy = me.id; } toast('اليوم اتقفل'); }, async () => must(await sb.rpc('admin_close_day', {p_shop:v})));
+    return false;
+  },
   askNotify(){ try { Notification.requestPermission().then(() => render()); } catch(e){} return false; }
 };
 
@@ -604,12 +653,14 @@ const F = {
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
     const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
     const note = String(fd.get('note') || '').trim();
-    const tx = {id:uuid(), ts:Date.now(), date:today(), shopId, userId:me.id, type:m.type, partyId, amount, note,
+    const od = openDay(shopId);
+    const tx = {id:uuid(), ts:Date.now(), date:od ? dayOf(od.openedAt) : today(), dayId:od?.id || null, shopId, userId:me.id, type:m.type, partyId, amount, note,
       afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
     op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
       async () => {
         if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
         must(await sb.from('txs').insert({id:tx.id, shop_id:shopId, type:m.type, party_id:partyId, amount, note}));
+        if (!od) await refresh().catch(() => {});
         tx.pending = false; softRender();
       }, 'الحركة ما اتسجلتش.');
   },
@@ -662,8 +713,7 @@ document.addEventListener('change', e => {
   }
   else if (c === 'fdate'){
     const d = el.value; if (!d) return;
-    ui.openDays.add(d); render();
-    if (!extraDays.has(d)) fetchDay(d).catch(() => toast('ما قدرتش أجيب اليوم ده'));
+    fetchDay(d).then(() => { S.days.filter(x => dayOf(x.openedAt) === d).forEach(x => ui.openDays.add(x.id)); render(); }).catch(() => toast('ما قدرتش أجيب اليوم ده'));
   }
   else if (el.name === 'party'){
     const p = el.value === '__new' ? null : party(el.value), pq = document.getElementById('pq');
@@ -705,7 +755,10 @@ function demoData(role){
     tx('t6', t, 13, 10, 's2', 'u2', 'gave', 4, 950, 'سماعة بلوتوث'),
     tx('t7', t, 14, 0, 's1', 'u1', 'took', 0, 150)];
   const notes = [{id:'n1', ts:at(t, 14, 0), read:false, text:'أحمد: أخدت من محمد عبد الله 150 ج.م (المحل الأول)'}, {id:'n2', ts:at(t, 13, 10), read:false, text:'محمود: أعطيت لـ مصطفى الميكانيكي 950 ج.م (المحل التاني)'}];
-  S = {shops, users, parties, txs, notes};
+  const days = [{id:'d0', shopId:'s1', openedAt:at(y, 9, 0), openedBy:'u1', closedAt:at(y, 23, 40), closedBy:'u1'},
+    {id:'d1', shopId:'s1', openedAt:at(t, 10, 0), openedBy:'u1', closedAt:null}, {id:'d2', shopId:'s2', openedAt:at(t, 10, 30), openedBy:'u2', closedAt:null}];
+  txs.forEach(x => x.dayId = x.date === y ? 'd0' : (x.shopId === 's1' ? 'd1' : 'd2'));
+  S = {shops, users, parties, txs, notes, days};
   me = users.find(u => u.role === (role === 'admin' ? 'admin' : 'cashier'));
   ui.shopId = 's1';
 }
