@@ -1,5 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
+const APP_VERSION = 16; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -183,6 +184,7 @@ function errText(e){
   if (m === 'admin_pin') return 'رقم المدير لازم يكون 6 أرقام.';
   if (m === 'pin') return 'الرقم السري لازم يكون 4 أرقام.';
   if (m === 'forbidden') return 'الحركة دي لهشام بس.';
+  if (m === 'unknown_action') return 'البرنامج محتاج يتحدّث. اقفله وافتحه تاني.';
   if (/fetch|network|Failed/i.test(m) || !navigator.onLine) return 'مفيش نت. اتأكد من الاتصال وجرّب تاني.';
   return 'حصلت مشكلة، جرّب تاني.';
 }
@@ -785,7 +787,20 @@ function demoData(role){
   ui.shopId = 's1';
 }
 
+// An app left open keeps old code; reload it when a newer version is published (never in the middle of a form).
+async function checkUpdate(){
+  if (DEMO) return;
+  try {
+    const v = (await (await fetch('version.json?t=' + Date.now(), {cache:'no-store'})).json()).v;
+    if (v > APP_VERSION){ if (ui.modal || ui.pinBusy) ui.reloadPending = true; else location.reload(); }
+  } catch(e){}
+}
+setInterval(checkUpdate, 3 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+document.addEventListener('click', () => { if (ui.reloadPending && !ui.modal) location.reload(); }, true);
+
 (async function boot(){
+  checkUpdate();
   if (DEMO){ demoData(DEMO); ui.booting = false; render(); return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
