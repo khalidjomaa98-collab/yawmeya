@@ -653,10 +653,11 @@ const F = {
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
     const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
     const note = String(fd.get('note') || '').trim();
-    const od = openDay(shopId);
-    const tx = {id:uuid(), ts:Date.now(), date:od ? dayOf(od.openedAt) : today(), dayId:od?.id || null, shopId, userId:me.id, type:m.type, partyId, amount, note,
+    // no open day yet: start one on screen now; the server opens the real one with this entry
+    const od = openDay(shopId), day = od || {id:'local-' + uuid(), shopId, openedAt:Date.now(), openedBy:me.id, closedAt:null};
+    const tx = {id:uuid(), ts:Date.now(), date:dayOf(day.openedAt), dayId:day.id, shopId, userId:me.id, type:m.type, partyId, amount, note,
       afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
-    op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
+    op(() => { if (newParty) S.parties.push(newParty); if (!od) S.days.push(day); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
       async () => {
         if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
         must(await sb.from('txs').insert({id:tx.id, shop_id:shopId, type:m.type, party_id:partyId, amount, note}));
