@@ -178,13 +178,28 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .back{border:0;background:none;color:var(--brand-ink);font-weight:600;align-self:flex-start;padding:4px 0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;z-index:40;max-width:calc(100% - 32px);text-align:center;box-shadow:var(--shadow)}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .2s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.5}}}
+
+/* amount pad */
+.amtbox{text-align:center;font-size:2.8rem;font-weight:700;line-height:1.1;padding:6px 0}
+.amtbox .num{font-family:var(--num)}
+.amtbox small{font-size:1rem;font-weight:500;color:var(--muted)}
+.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;direction:ltr}
+.kp button{border:0;background:var(--sunk);border-radius:14px;min-height:58px;font-family:var(--num);font-size:1.5rem;font-weight:500;color:var(--ink)}
+.kp button:active{background:var(--line)}
+details summary{cursor:pointer;padding:4px 0;list-style:none}
+details summary::-webkit-details-marker{display:none}
+.sht{display:flex;align-items:center;gap:8px}
+.ic-s{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center}
+.ic-s svg{width:18px;height:18px}
+.tbtn{border:0;background:var(--bg);color:var(--ink);border-radius:999px;padding:4px 12px;margin-inline-start:8px;font-weight:700}
+.names .pick span{min-height:40px}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="config.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

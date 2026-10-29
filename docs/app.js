@@ -80,7 +80,7 @@ async function refresh(){
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
   const [shops, users, parties, closures, txs, notes] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
-    sb.from('profiles').select('id,name,role,active,created_at').order('created_at'),
+    sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
     sb.from('parties').select('id,name,phone').order('name'),
     sb.from('closures').select('*').gte('day', admin ? from : t),
     admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq.eq('day', t),
@@ -95,7 +95,8 @@ async function refresh(){
   pend.forEach(p => { if (!S.txs.some(t => t.id === p.id)) S.txs.push(p); });
   S.notes = must(notes).map(mapNote);
   for (const d of extraDays) await fetchDay(d, false);
-  if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null;
+  if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
+  else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
 }
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
@@ -143,7 +144,7 @@ async function loadLogin(){
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data; await refresh(); subscribe(); }
+  if (r.data && r.data.active){ me = r.data; if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); }
   else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
@@ -183,7 +184,7 @@ async function op(local, remote, failMsg){
 
 /* ---------- pieces ---------- */
 function band(inner){
-  const where = me.role === 'admin' ? 'المدير' : 'كاشير';
+  const where = me.role === 'admin' ? 'المدير' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
     <header class="band"><div class="in gut">
       <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
@@ -250,18 +251,18 @@ function renderLogin(){
 }
 
 function renderCashier(){
-  const t = today(), s = shop(ui.shopId);
-  if (!s) return `${band('')}<main class="wrap gut"><p class="empty">مفيش محلات متسجلة.</p></main>`;
+  const t = today(), s = shop(me.shop_id);
+  if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
   const cl = closureOf(s.id, t);
   const list = dayList(s.id, t).filter(live).sort((a, b) => b.ts - a.ts);
-  return `${band(`${shopPills(ui.shopId, 'shop')}${sumBox(totals(list))}`)}
+  return `${band(sumBox(totals(list)))}
   <main class="wrap gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took" ${cl ? 'disabled' : ''}><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave" ${cl ? 'disabled' : ''}><span class="ic">${icon.gave}</span>أعطيت</button>
     </div>
     ${cl ? `<div class="banner">اليومية اتقفلت الساعة ${tm(cl.ts)}. لو محتاج تسجل حاجة، كلّم هشام يفتحها.</div>` : ''}
-    <section><div class="head"><h2>حركات النهارده</h2><span class="muted small">${s.name ? esc(s.name) + ' · ' : ''}${list.length}</span></div>
+    <section><div class="head"><h2>حركات النهارده</h2><span class="muted small num">${list.length}</span></div>
       ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
     </section>
     ${cl ? '' : `<button class="btn wide" data-a="closeDay" ${list.length ? '' : 'disabled'}>اقفل يومية النهارده</button>`}
@@ -302,8 +303,7 @@ function tabTxs(){
       <div class="field"><label for="fshop">المحل</label><select id="fshop" data-c="fshop"><option value="all">المحلين</option>${S.shops.map(s => `<option value="${s.id}" ${f.shop === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div></div>
       ${(f.shop === 'all' ? S.shops : [shop(f.shop)]).map(s => { const cl = closureOf(s.id, f.date); const r = totals(dayList(s.id, f.date));
         return `<div class="head small"><span><b>${esc(s.name)}</b> · <span class="took-t num">${nf(r.took)}</span> / <span class="gave-t num">${nf(r.gave)}</span></span>
-          ${cl ? `<span class="muted">اتقفلت ${tm(cl.ts)} <button class="btn link" data-a="reopen" data-v="${cl.id}">افتحها</button></span>` : `<span class="muted">مفتوحة</span>`}</div>`; }).join('')}
-      <button class="btn sm" data-a="copyTxs" ${list.length ? '' : 'disabled'} style="align-self:flex-start">نسخ للإكسل</button></div>
+          ${cl ? `<span class="muted">اتقفلت ${tm(cl.ts)} <button class="btn link" data-a="reopen" data-v="${cl.id}">افتحها</button></span>` : `<span class="muted">مفتوحة</span>`}</div>`; }).join('')}</div>
     ${list.length ? `<ul class="list">${list.map(x => item(x, {shop:f.shop === 'all', who:true, admin:true,
         end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
       : `<p class="empty">مفيش حركات في اليوم ده.</p>`}`;
@@ -315,12 +315,13 @@ function tabNotes(){
 }
 function tabSet(){
   return `<section><h2>المحلات</h2><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></section>
-    <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : 'كاشير'}${u.active ? '' : ' · موقوف'}</small></div>
+    <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
         ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
       <form id="userf" class="card"><h3>ضيف كاشير</h3><div class="row2">
         <div class="field"><label for="nu-name">الاسم</label><input id="nu-name" name="name" autocomplete="off"></div>
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
+        <div class="field"><label for="nu-shop">المحل</label><select id="nu-shop" name="shop"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${'' === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
         <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>`;
 }
 
@@ -344,12 +345,13 @@ function renderModal(){
   const m = ui.modal; if (!m) return '';
   if (m.kind === 'tx'){
     const T = TYPES[m.type];
-    return sheet(`<h2>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
+    return sheet(`<h2 class="sht"><span class="ic-s">${icon[m.type]}</span>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
       ${me.role === 'admin' ? `<div class="field"><label for="f-shop">المحل</label><select id="f-shop" name="shop">${S.shops.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label for="pq">الاسم</label><input id="pq" type="search" placeholder="اكتب الاسم أو اختار" autocomplete="off">
         <div id="plist" class="names" role="radiogroup" style="margin-top:4px">${nameOptions('', null)}</div></div>
-      <div class="field"><label for="f-amount">المبلغ</label><input id="f-amount" name="amount" class="amount" inputmode="decimal" autocomplete="off" placeholder="0"></div>
-      <div class="field"><label for="f-note">ملاحظة (اختياري)</label><input id="f-note" name="note" autocomplete="off"></div>
+      <div class="amtbox ${m.type}-t" id="amt" aria-live="polite"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
+      <div class="kp">${['1','2','3','4','5','6','7','8','9','00','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}" ${k === '⌫' ? 'aria-label="امسح رقم"' : ''}>${k}</button>`).join('')}</div>
+      <details><summary class="muted small">+ ملاحظة</summary><input id="f-note" name="note" autocomplete="off" placeholder="مثلًا: شاحن سامسونج" style="margin-top:8px"></details>
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn ${m.type} wide">سجّل</button></form>`, m.type);
   }
@@ -392,42 +394,28 @@ function renderModal(){
       <div class="field"><label for="pn-pin">${len} أرقام</label><input id="pn-pin" name="pin" type="password" inputmode="numeric" maxlength="${len}" autocomplete="new-password" data-autofocus></div>
       <p id="ferr" class="err" role="alert"></p><button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>احفظ</button></form>`);
   }
-  if (m.kind === 'copy'){
-    return sheet(`<h2>انسخ النص</h2>`, `<p class="muted small">النص متعلّم. اضغط مطوّل واختار نسخ.</p><textarea id="copybox" rows="8" readonly dir="auto">${esc(m.text)}</textarea>`);
-  }
   return '';
 }
 
 /* ---------- render ---------- */
 let toastTimer;
-function toast(t){
-  ui.toast = t; clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { ui.toast = null; document.querySelector('.toast')?.remove(); }, 2600);
+function toast(t, undoId){
+  ui.toast = {t, undoId}; clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { ui.toast = null; document.querySelector('.toast')?.remove(); }, undoId ? 5000 : 2600);
 }
 function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
   let h = ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += me ? renderModal() : '';
-  if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast)}</div>`;
+  if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
-  const cb = document.getElementById('copybox'); if (cb){ cb.focus(); cb.select(); }
   if (me?.role === 'admin' && ui.tab === 'notes' && S.notes.some(n => !n.read)){
     const ids = S.notes.filter(n => !n.read).map(n => n.id);
     S.notes.forEach(n => n.read = true);
     if (!DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {});
   }
-}
-function copyText(text){
-  try { navigator.clipboard.writeText(text).then(() => { toast('اتنسخ'); render(); }, () => { ui.modal = {kind:'copy', text}; render(); }); }
-  catch(e){ ui.modal = {kind:'copy', text}; render(); }
-}
-function tsv(list){
-  const head = ['التاريخ','الوقت','المحل','النوع','الاسم','المبلغ','ملاحظة','سجّلها'];
-  const rows = list.map(t => [t.date, tm(t.ts), shop(t.shopId)?.name, TYPES[t.type].label, pname(t), t.amount, t.note, user(t.userId)?.name]
-    .map(v => String(v ?? '').replace(/[\t\n]/g, ' ')).join('\t'));
-  return [head.join('\t'), ...rows].join('\n');
 }
 function formErr(msg, id = 'ferr'){ const e = document.getElementById(id); if (e) e.textContent = msg; }
 // For account changes that must be confirmed by the server before showing them.
@@ -478,7 +466,22 @@ const A = {
     sb.auth.signOut().finally(() => loadLogin().then(render));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
-  type(v){ ui.modal = {kind:'tx', type:v}; },
+  type(v){ ui.modal = {kind:'tx', type:v, amt:''}; },
+  kp(v){
+    const m = ui.modal; let a = m.amt || '';
+    if (v === '⌫') a = a.slice(0, -1); else if (a.length < 9) a = (a + v).replace(/^0+/, '');
+    m.amt = a;
+    const el = document.querySelector('#amt .num'); if (el) el.textContent = a ? Number(a).toLocaleString('en-US') : '0';
+    try { navigator.vibrate?.(8); } catch(e){}
+    return false;
+  },
+  undo(v){
+    const t = S.txs.find(x => x.id === v); if (!t || t.deleted) return false;
+    ui.toast = null;
+    op(() => { t.deleted = {by:me.id, ts:Date.now(), reason:'اتلغت على طول'}; toast('اتلغت'); },
+       async () => { while (t.pending) await new Promise(r => setTimeout(r, 150)); must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:'اتلغت على طول'})); });
+    return false;
+  },
   del(v){ ui.modal = {kind:'del', id:v}; },
   restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
     op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
@@ -492,7 +495,6 @@ const A = {
   reopen(v){ op(() => { S.closures = S.closures.filter(c => c.id !== v); toast('اليومية اتفتحت'); }, async () => must(await sb.from('closures').delete().eq('id', v))); return false; },
   tab(v){ ui.tab = v; window.scrollTo(0, 0); },
   kshop(v){ ui.kshop = v; },
-  copyTxs(){ copyText(tsv(S.txs.filter(t => (ui.f.shop === 'all' || t.shopId === ui.f.shop) && t.date === ui.f.date && live(t)).sort((a, b) => a.ts - b.ts))); return false; },
   send(v){ ui.modal = {kind:'send', id:v}; },
   sendOpen(v, e){
     const L = window.Capacitor?.Plugins?.AppLauncher;
@@ -541,7 +543,7 @@ const F = {
   },
   txf(fd){
     const m = ui.modal;
-    const amount = parseFloat(latin(fd.get('amount')).replace(/[,٬\s]/g, '').replace('٫', '.'));
+    const amount = parseFloat(m.amt || '0');
     const v = fd.get('party'), typed = String(document.getElementById('pq').value || '').trim().replace(/\s+/g, ' ');
     let partyId = v && v !== '__new' ? v : null, newParty = null;
     if (!partyId){
@@ -555,7 +557,7 @@ const F = {
     const note = String(fd.get('note') || '').trim();
     const tx = {id:uuid(), ts:Date.now(), date:today(), shopId, userId:me.id, type:m.type, partyId, amount, note,
       afterClose:!!closureOf(shopId, today()), deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
-    op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`); },
+    op(() => { if (newParty) S.parties.push(newParty); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
       async () => {
         if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
         must(await sb.from('txs').insert({id:tx.id, shop_id:shopId, type:m.type, party_id:partyId, amount, note}));
@@ -576,7 +578,13 @@ const F = {
     const name = String(fd.get('name') || '').trim(), pin = latin(fd.get('pin')).trim();
     if (!name) return formErr('اكتب اسم الكاشير.', 'uerr');
     if (!/^\d{4}$/.test(pin)) return formErr('الرقم السري لازم يكون 4 أرقام.', 'uerr');
-    act(async () => { await fnCall({action:'create_user', name, pin}); if (DEMO) S.users.push({id:uuid(), name, role:'cashier', active:true}); }, {errId:'uerr', done:() => toast(`${name} اتضاف`)});
+    const shopId = fd.get('shop');
+    if (!shopId) return formErr('اختار المحل اللي هيشتغل فيه.', 'uerr');
+    act(async () => {
+      if (DEMO){ S.users.push({id:uuid(), name, role:'cashier', active:true, shop_id:shopId}); return; }
+      const r = await fnCall({action:'create_user', name, pin});
+      must(await sb.from('profiles').update({shop_id:shopId}).eq('id', r.id));
+    }, {errId:'uerr', done:() => toast(`${name} اتضاف`)});
   },
   shopsf(fd){
     const changes = S.shops.map(s => [s, String(fd.get(s.id) || '').trim()]).filter(([s, n]) => n && n !== s.name);
@@ -594,6 +602,10 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
   if (c === 'fshop'){ ui.f.shop = el.value; render(); }
+  else if (c === 'ushop'){
+    const u = user(el.dataset.u), v = el.value || null;
+    op(() => { u.shop_id = v; toast(`${u.name}: ${v ? shop(v).name : 'من غير محل'}`); }, async () => must(await sb.from('profiles').update({shop_id:v}).eq('id', u.id)));
+  }
   else if (c === 'fdate'){
     ui.f.date = el.value || today(); render();
     if (ui.f.date < addDays(today(), -45) && !extraDays.has(ui.f.date)) fetchDay(ui.f.date).catch(() => toast('ما قدرتش أجيب اليوم ده'));
@@ -601,7 +613,7 @@ document.addEventListener('change', e => {
   else if (el.name === 'party'){
     const p = el.value === '__new' ? null : party(el.value), pq = document.getElementById('pq');
     if (p && pq) pq.value = p.name;
-    document.getElementById('f-amount')?.focus();
+    document.activeElement?.blur?.();
   }
 });
 document.addEventListener('input', e => {
@@ -625,7 +637,7 @@ sb.auth.onAuthStateChange(evt => { if (evt === 'SIGNED_OUT' && me && !DEMO){ me 
 
 function demoData(role){
   const t = today(), y = addDays(t, -1), at = (ds, h, m) => { const [Y, M, D] = ds.split('-').map(Number); return new Date(Y, M - 1, D, h, m).getTime(); };
-  const users = [{id:'u0', name:'هشام', role:'admin', active:true}, {id:'u1', name:'أحمد', role:'cashier', active:true}, {id:'u2', name:'محمود', role:'cashier', active:true}];
+  const users = [{id:'u0', name:'هشام', role:'admin', active:true}, {id:'u1', name:'أحمد', role:'cashier', active:true, shop_id:'s1'}, {id:'u2', name:'محمود', role:'cashier', active:true, shop_id:'s2'}];
   const shops = [{id:'s1', name:'المحل الأول'}, {id:'s2', name:'المحل التاني'}];
   const parties = ['محمد عبد الله', 'سيد حسن', 'أم كريم', 'مصطفى الميكانيكي', 'عمر', 'مخزن النور'].map((name, i) => ({id:'p' + i, name, phone:null}));
   const tx = (id, date, h, m, shopId, userId, type, p, amount, note = '', extra = {}) => ({id, ts:at(date, h, m), date, shopId, userId, type, partyId:'p' + p, amount, note, afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, ...extra});
