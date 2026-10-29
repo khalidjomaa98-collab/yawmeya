@@ -114,6 +114,10 @@ section{display:flex;flex-direction:column;gap:10px}
 .mid b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mid small{display:block;color:var(--muted);font-size:.84rem;overflow-wrap:anywhere}
 .mid .flag{color:var(--gave)}
+.mid .note{color:var(--ink);opacity:.75}
+.sum .pair{display:flex;justify-content:space-between;gap:8px}
+.sum .pair span{min-width:0}
+.sum .pair b{font-size:1.1rem}
 .end{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}
 .amt{font-family:var(--num);font-weight:600;font-size:1.08rem;white-space:nowrap}
 .amt .cur{font-family:var(--font);font-size:.75em;font-weight:500;opacity:.75}
@@ -248,7 +252,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

@@ -198,14 +198,13 @@ function item(x, o = {}){
   sub.push(tm(x.ts));
   if (o.shop) sub.push(esc(shop(x.shopId)?.name));
   if (o.who) sub.push(esc(user(x.userId)?.name));
-  if (x.note) sub.push(esc(x.note));
   let end = o.end || '';
   if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`;
   if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
   const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>` : '';
   return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" data-id="${x.id}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
     ${avatar(pname(x))}
-    <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${flag}</div>
+    <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${x.note ? `<small class="note">${esc(x.note)}</small>` : ''}${flag}</div>
     <div class="end"><span class="amt ${x.type}-t">${money(x.amount)}</span>${end}</div></li>`;
 }
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
@@ -265,7 +264,7 @@ function renderAdmin(){
   const unread = S.notes.filter(n => !n.read).length;
   const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
-      <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div><small>أخدت / أعطيت</small><b class="num" style="font-size:1.05rem"><span class="in-t">${nf(totals(pend).took)}</span> / <span class="out-t">${nf(totals(pend).gave)}</span></b></div></div>`
+      <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div class="pair"><span><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></span><span><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></span></div></div>`
     : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
@@ -537,7 +536,10 @@ const A = {
   del(v){ ui.modal = {kind:'del', id:v}; },
   restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
     op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
-  tab(v){ ui.tab = v; window.scrollTo(0, 0); },
+  tab(v){
+    ui.tab = v; window.scrollTo(0, 0);
+    if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
+  },
   kshop(v){ ui.kshop = v; },
   fshop(v){ ui.f.shop = v; },
   toggleDay(v){ ui.openDays.has(v) ? ui.openDays.delete(v) : ui.openDays.add(v); },
@@ -649,7 +651,8 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
   const name = el.dataset.a, fn = A[name]; if (!fn) return;
   if (name !== 'sendOpen' && el.tagName === 'A') e.preventDefault();
-  if (fn(el.dataset.v, e) !== false) render();
+  const before = ui.modal;
+  if (fn(el.dataset.v, e) !== false){ if (ui.modal && ui.modal !== before && ui.modal.kind !== 'send') ui.toast = null; render(); }
 });
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
