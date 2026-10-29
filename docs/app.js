@@ -40,6 +40,7 @@ const icon = {
   took:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
   gave:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   out:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor"/></svg>',
   kenash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>',
   txs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
   notes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
@@ -269,18 +270,15 @@ function renderCashier(){
   if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
   const od = openDay(s.id);
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
-  const longOpen = od && Date.now() - od.openedAt > 18 * 3600e3;
-  return `${band(sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم مفتوح من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
+  return `${band(sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
     </div>
-    ${longOpen ? `<div class="banner">اليوم ده مفتوح من ${dayLabel(dayOf(od.openedAt))}. لو خلّصت، اقفله.</div>` : ''}
     <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length}</span></div>
       ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
     </section>
-    ${od ? `<button class="btn wide" data-a="closeDay">🔒 اقفل اليوم</button>` : ''}
   </main>`;
 }
 
@@ -297,12 +295,22 @@ function renderAdmin(){
   return `${band(top)}<main class="wrap admin gut">${body}</main>
     <nav class="nav" aria-label="الأقسام"><div class="in">${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
 }
+// Shops whose day is still open: closing one clears the cashier's screen and starts a fresh day.
+function openDaysCard(){
+  const open = S.shops.map(sh => ({sh, d:openDay(sh.id)})).filter(x => x.d && (ui.kshop === 'all' || x.sh.id === ui.kshop));
+  if (!open.length) return '';
+  return `<section><h2>الأيام المفتوحة</h2><ul class="list">${open.map(({sh, d}) => { const r = totals(dayTxs(d));
+    return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
+      <div class="mid"><b>${esc(sh.name)}</b><small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)} · ${r.count} حركة · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small></div>
+      <div class="end"><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></li>`; }).join('')}</ul></section>`;
+}
 function tabKenash(){
   const pend = pendingList();
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck);
   const recent = S.txs.filter(t => live(t) && t.transferred && t.transferredAt).sort((a, b) => b.transferredAt - a.transferredAt).slice(0, 6);
   const days = [...new Set(pend.map(t => t.date))];
-  return `${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}" style="box-shadow:var(--shadow)">ابدأ النقل لكناش</button>` : ''}
+  return `${openDaysCard()}
+    ${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}" style="box-shadow:var(--shadow)">ابدأ النقل لكناش</button>` : ''}
     ${alerts.length ? `<section><h2 class="gave-t">امسح دول من كناش</h2>
       <ul class="list">${alerts.map(x => item(x, {shop:true, date:true, end:`<button class="btn sm" data-a="ack" data-v="${x.id}">مسحتها</button>`})).join('')}</ul></section>` : ''}
     ${pend.length ? days.map(d => `<section><div class="dayhead">${dayLabel(d)}</div><ul class="list">${pend.filter(t => t.date === d).map(x => item(x, {tap:'send', shop:ui.kshop === 'all', who:true})).join('')}</ul></section>`).join('')
@@ -324,7 +332,7 @@ function tabTxs(){
           <span class="chev" aria-hidden="true">‹</span></button>
         ${open ? (list.length ? `<ul class="list">${list.map(x => item(x, {who:true, admin:true,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
-          : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn" data-a="adminClose" data-v="${d.shopId}">🔒 اقفل اليوم ده</button>`) : ''}</section>`;
+          : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn dark" data-a="closeDay" data-v="${d.shopId}">قفل اليوم ده</button>`) : ''}</section>`;
     }).join('') : `<p class="empty">لسه مفيش أيام.</p>`}
     <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
 }
@@ -403,13 +411,16 @@ function renderModal(){
       <button class="btn danger wide">امسح</button></form>`);
   }
   if (m.kind === 'closeDay'){
-    const od = openDay(me.shop_id); if (!od){ ui.modal = null; return ''; }
-    const r = totals(dayTxs(od));
-    return sheet(`<h2>اقفل اليوم</h2>`, `
-      <div class="row2"><div class="card flat took-bg"><small class="muted">أخدت</small><b class="num took-t big">${nf(r.took)}</b></div>
-        <div class="card flat gave-bg"><small class="muted">أعطيت</small><b class="num gave-t big">${nf(r.gave)}</b></div></div>
-      <p class="muted small" style="text-align:center">${r.count} حركة من ${tm(od.openedAt)}. اكتب رقمك السري علشان تقفل.</p>
-      <div class="dots dark ${m.err ? 'bad' : ''}">${[0,1,2,3].map(i => `<span class="${i < (m.pin || '').length ? 'f' : ''}"></span>`).join('')}</div>
+    const sh = shop(m.shopId), od = openDay(m.shopId); if (!sh || !od){ ui.modal = null; return ''; }
+    const list = dayTxs(od), r = totals(list), waiting = list.filter(t => live(t) && !t.transferred).length;
+    return sheet(`<h2>قفل يوم ${esc(sh.name)}</h2>`, `
+      <div class="lockhero"><span class="lockic">${icon.lock}</span>
+        <p>الحركات هتختفي من عند الكاشير ويبدأ يوم جديد. هتفضل عندك في السجل وفي قسم كناش.</p></div>
+      <div class="kpis3"><div><small>حركة</small><b class="num">${r.count}</b></div>
+        <div><small>أخدت</small><b class="num took-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num gave-t">${nf(r.gave)}</b></div></div>
+      <p class="muted small" style="text-align:center">من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)} لحد دلوقتي${waiting ? ` · ${waiting} لسه ما اتنقلوش لكناش` : ''}</p>
+      <p class="pinlbl">اكتب رقمك السري</p>
+      <div class="dots dark ${m.err ? 'bad' : ''}">${Array.from({length:6}, (_, i) => `<span class="${i < m.pin.length ? 'f' : ''}"></span>`).join('')}</div>
       <p class="err" role="alert" style="text-align:center">${m.busy ? '<span class="muted">بيقفل...</span>' : esc(m.err || '')}</p>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','','0','⌫'].map(k => k ? `<button type="button" data-a="cpin" data-v="${k}" ${m.busy ? 'disabled' : ''}>${k}</button>` : '<span></span>').join('')}</div>`);
   }
@@ -609,30 +620,25 @@ const A = {
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
   wipe(){ ui.modal = {kind:'wipe'}; },
-  closeDay(){ ui.modal = {kind:'closeDay', pin:''}; },
+  closeDay(v){ ui.modal = {kind:'closeDay', shopId:v, pin:''}; },
   cpin(v){
     const m = ui.modal; if (m.busy) return false;
-    m.err = ''; m.pin = v === '⌫' ? m.pin.slice(0, -1) : (m.pin + v).slice(0, 4);
-    if (m.pin.length < 4) return;
+    m.err = ''; m.pin = v === '⌫' ? m.pin.slice(0, -1) : (m.pin + v).slice(0, 6);
+    if (m.pin.length < 6) return;
     m.busy = true; render();
-    const sid = me.shop_id;
     (async () => {
       try {
-        if (!DEMO) await fnCall({action:'close_day', pin:m.pin});
-        const od = openDay(sid); if (od){ od.closedAt = Date.now(); od.closedBy = me.id; }
-        ui.modal = null; toast('اليوم اتقفل ✓'); setTimeout(confetti, 60);
+        if (!DEMO) await fnCall({action:'close_day', shop_id:m.shopId, pin:m.pin});
+        const od = openDay(m.shopId); if (od){ od.closedAt = Date.now(); od.closedBy = me.id; }
+        ui.modal = null; toast(`يوم ${shop(m.shopId)?.name} اتقفل ✓`); setTimeout(confetti, 60);
         if (!DEMO) refresh().then(render).catch(() => {});
       } catch(e){
         m.busy = false; m.pin = ''; m.err = errText(e); render();
         const d = document.querySelector('.dots'); if (d) replay(d, 'shake');
+        return;
       }
       render();
     })();
-    return false;
-  },
-  adminClose(v){
-    const od = openDay(v);
-    op(() => { if (od){ od.closedAt = Date.now(); od.closedBy = me.id; } toast('اليوم اتقفل'); }, async () => must(await sb.rpc('admin_close_day', {p_shop:v})));
     return false;
   },
   askNotify(){ try { Notification.requestPermission().then(() => render()); } catch(e){} return false; }

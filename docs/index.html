@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>اليومية</title>
-<meta name="theme-color" content="#12305a">
+<meta name="theme-color" content="#14325e">
 <meta name="description" content="يومية المحلات: الكاشير بيسجل أخدت وأعطيت، وهشام بينقلها لكناش.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -16,9 +16,9 @@
 <style>
 /* Navy shop-ledger band on top, white cards below; green = أخدت, red = أعطيت (Konnash's own colors) */
 :root{
-  --brand:#12305a; --brand-2:#1d4a86; --brand-ink:#ffffff; --brand-muted:rgba(255,255,255,.72);
-  --bg:#eef1f5; --surface:#ffffff; --sunk:#f3f5f8; --ink:#121822; --muted:#5d6878; --line:#e2e6ec;
-  --accent:#1d4a86; --accent-ink:#ffffff;
+  --brand:#14325e; --brand-2:#1f4f8f; --brand-ink:#ffffff; --brand-muted:rgba(255,255,255,.75);
+  --bg:#f1f3f7; --surface:#ffffff; --sunk:#f4f6f9; --ink:#141a24; --muted:#5b6574; --line:#e1e5eb;
+  --accent:#2457b3; --accent-ink:#ffffff;
   --took:#0b8a4a; --took-soft:#e3f5eb; --gave:#d33a2f; --gave-soft:#fde8e6;
   --shadow:0 1px 2px rgba(18,24,34,.06),0 8px 24px rgba(18,24,34,.08);
   --scrim:rgba(10,16,26,.55);
@@ -27,9 +27,9 @@
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root{
-  --brand:#0c1a2e; --brand-2:#163156; --brand-muted:rgba(255,255,255,.65);
-  --bg:#0b0f15; --surface:#151b24; --sunk:#10151c; --ink:#edf1f6; --muted:#9aa5b4; --line:#252d39;
-  --accent:#7ea8ff; --accent-ink:#0a1222;
+  --brand:#122640; --brand-2:#1c3d68; --brand-muted:rgba(255,255,255,.7);
+  --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
+  --accent:#3f7be0; --accent-ink:#ffffff;
   --took:#3cc683; --took-soft:#11291c; --gave:#ff7b70; --gave-soft:#331716;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.65); color-scheme:dark;
 }}
@@ -115,6 +115,17 @@ section{display:flex;flex-direction:column;gap:10px}
 .mid small{display:block;color:var(--muted);font-size:.84rem;overflow-wrap:anywhere}
 .mid .flag{color:var(--gave)}
 .mid .note{color:var(--ink);opacity:.75}
+.lockhero{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.lockhero p{color:var(--muted);font-size:.92rem;max-width:34ch}
+.lockic{width:64px;height:64px;border-radius:50%;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;flex-shrink:0}
+.lockic svg{width:30px;height:30px}
+.lockic.sm{width:42px;height:42px} .lockic.sm svg{width:20px;height:20px}
+.kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpis3 div{background:var(--sunk);border-radius:14px;padding:10px;text-align:center;min-width:0}
+.kpis3 small{display:block;color:var(--muted);font-size:.8rem}
+.kpis3 b{font-size:1.15rem}
+.pinlbl{text-align:center;font-weight:600}
+.btn.dark{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
 .dayinfo{color:var(--brand-muted);font-size:.85rem}
 .card.flat{box-shadow:none;padding:12px}
 .took-bg{background:var(--took-soft)} .gave-bg{background:var(--gave-soft)}
@@ -260,7 +271,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="config.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
