@@ -1,5 +1,5 @@
 // App shell cache: always ask the server first (bypassing the browser's HTTP cache) so updates show up at once; use the cache only offline.
-const CACHE = 'yawmeya-v11';
+const CACHE = 'yawmeya-v12';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {

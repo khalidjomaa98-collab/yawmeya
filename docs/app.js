@@ -139,13 +139,28 @@ function softRender(){
   render();
 }
 
+// The owner's phone (Android app) registers with Firebase so notifications arrive even when the app is closed.
+let pushReady = false;
+async function registerPush(){
+  const P = window.Capacitor?.Plugins?.PushNotifications;
+  if (pushReady || !CFG.push || DEMO || !isNative() || !P || me?.role !== 'admin') return;
+  pushReady = true;
+  try {
+    let perm = await P.checkPermissions();
+    if (perm.receive !== 'granted') perm = await P.requestPermissions();
+    if (perm.receive !== 'granted') return;
+    await P.addListener('registration', t => { if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
+    await P.addListener('pushNotificationActionPerformed', () => { if (me?.role === 'admin'){ ui.tab = 'notes'; render(); } });
+    await P.register();
+  } catch(e){ pushReady = false; }
+}
 async function loadLogin(){
   const [u, n] = await Promise.all([sb.rpc('login_users'), sb.rpc('needs_setup')]);
   ui.loginUsers = u.data || []; ui.needsSetup = !!n.data;
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data; if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); }
+  if (r.data && r.data.active){ me = r.data; if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
   else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
