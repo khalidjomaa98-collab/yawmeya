@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 17; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 18; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -312,9 +312,9 @@ function openDaysCard(){
       <div class="end"><button class="btn sm" data-a="opening" data-v="${sh.id}">ابدأ برصيد</button></div></li>`;
     const r = totals(dayTxs(d)), cash = cashOf(d);
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
-      <div class="mid"><b>${esc(sh.name)} · ${cash == null ? '<span class="gave-t">مفيش رصيد بداية</span>' : `<span class="num">${nf(cash)}</span>`}</b>
+      <div class="mid"><b>${esc(sh.name)}</b><div class="cashline">${cash == null ? '<span class="gave-t">مفيش رصيد بداية</span>' : `<span class="num">${nf(cash)}</span> <small>في الخزنة</small>`}</div>
         <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small></div>
-      <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل</button></div></li>`;
+      <div class="end" style="gap:6px"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل</button></div></li>`;
   }).join('')}</ul></section>`;
 }
 function tabKenash(){
