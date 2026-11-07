@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 18; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 19; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -45,14 +45,17 @@ const icon = {
   kenash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>',
   txs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
   notes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
-  set:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>'
+  set:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
+  dev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>'
 };
+// Where the money from a device sale went.
+const PAY = {cashier:'درج الكاشير', acc:'درج الإكسسوار', hcash:'اتش كاش'};
 
 /* ---------- state ---------- */
-let S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[]};
+let S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
 let me = null;
 const ui = {booting:true, loginUsers:[], needsSetup:false, pinUser:null, pin:'', pinErr:'', pinBusy:false, busy:false,
-  shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', f:{shop:'all'}, openDays:new Set([today()]), wipeOk:false,
+  shopId:lsGet('yawmeya-shop'), tab:'kenash', kshop:'all', dshop:'all', f:{shop:'all'}, openDays:new Set([today()]), wipeOk:false,
   modal:null, toast:null, dirty:false, offline:!navigator.onLine, installEvt:null};
 
 const user = id => S.users.find(u => u.id === id);
@@ -64,6 +67,11 @@ const pendingList = () => S.txs.filter(t => live(t) && !t.transferred && (ui.ksh
 const openDay = shopId => S.days.find(d => d.shopId === shopId && !d.closedAt);
 const dayTxs = d => S.txs.filter(t => t.dayId === d.id);
 function totals(list){ const r = {took:0, gave:0, count:0}; list.filter(live).forEach(t => { r[t.type] += t.amount; r.count++; }); return r; }
+const device = id => S.devices.find(d => d.id === id);
+const daySales = d => S.sales.filter(s => s.dayId === d.id && !s.deleted);
+// Sales split by where the money went, plus the profit.
+function saleTot(list){ const r = {cashier:0, acc:0, hcash:0, total:0, profit:0, count:0};
+  list.filter(s => !s.deleted).forEach(s => { const v = s.qty * s.price; r[s.pay] += v; r.total += v; r.profit += s.qty * (s.price - s.buy); r.count += s.qty; }); return r; }
 const upsert = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if (i >= 0) arr[i] = row; else arr.push(row); };
 
 /* ---------- data ---------- */
@@ -71,7 +79,10 @@ const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id,
   amount:Number(r.amount), note:r.note || '', afterClose:r.after_close, deleteAck:r.delete_ack,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
   transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null, dayId:r.day_id});
-const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at), openedBy:r.opened_by, closedAt:r.closed_at ? Date.parse(r.closed_at) : null, closedBy:r.closed_by, opening:r.opening_balance == null ? null : Number(r.opening_balance)});
+const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at), openedBy:r.opened_by, closedAt:r.closed_at ? Date.parse(r.closed_at) : null, closedBy:r.closed_by, opening:r.opening_balance == null ? null : Number(r.opening_balance), accOpening:r.acc_opening == null ? null : Number(r.acc_opening)});
+const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:Number(r.buy_price), sell:Number(r.sell_price), qty:r.qty, archived:!!r.archived});
+const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
+  buy:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
 const mapNote = n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
@@ -80,14 +91,20 @@ async function refresh(){
   if (DEMO) return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
-  const [shops, users, parties, txs, notes, days] = await Promise.all([
+  const [shops, users, parties, txs, notes, days, devices, sales] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
     sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
     sb.from('parties').select('id,name,phone').order('name'),
     admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq,
     admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
-    admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null)
+    admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null),
+    sb.from('devices').select('*').eq('archived', false).order('name'),
+    sb.from('device_sales').select('*').gte('ts', from + 'T00:00:00Z').order('ts', {ascending:false}).limit(3000)
   ]);
+  S.devices = must(devices).map(mapDev);
+  const pendS = S.sales.filter(s => s.pending);
+  S.sales = must(sales).map(mapSale);
+  pendS.forEach(p => { if (!S.sales.some(s => s.id === p.id)) S.sales.push(p); });
   S.shops = must(shops);
   S.users = must(users);
   S.parties = must(parties);
@@ -116,13 +133,15 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties', 'shop_days']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
   else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
+  else if (table === 'devices'){ if (del || row.archived) S.devices = S.devices.filter(d => d.id !== (row?.id || old.id)); else upsert(S.devices, mapDev(row)); }
+  else if (table === 'device_sales'){ if (del) S.sales = S.sales.filter(s => s.id !== old.id); else upsert(S.sales, mapSale(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && me?.role === 'admin'){
     if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
@@ -184,6 +203,9 @@ function errText(e){
   if (m === 'admin_pin') return 'رقم المدير لازم يكون 6 أرقام.';
   if (m === 'pin') return 'الرقم السري لازم يكون 4 أرقام.';
   if (m === 'forbidden') return 'الحركة دي لهشام بس.';
+  if (m.includes('NO_STOCK')) return 'الكمية دي مش موجودة في المخزن.';
+  if (m.includes('VOUCHER')) return 'اكتب رقم البون.';
+  if (m.includes('NO_DEVICE')) return 'الجهاز ده اتشال من المخزن.';
   if (m === 'unknown_action') return 'البرنامج محتاج يتحدّث. اقفله وافتحه تاني.';
   if (/fetch|network|Failed/i.test(m) || !navigator.onLine) return 'مفيش نت. اتأكد من الاتصال وجرّب تاني.';
   return 'حصلت مشكلة، جرّب تاني.';
@@ -214,8 +236,11 @@ function band(inner, tall){
     ${ui.offline ? `<div class="offline">مفيش نت. اللي هتسجله مش هيتحفظ لحد ما النت يرجع.</div>` : ''}`;
 }
 // Cash in the drawer: what the owner started the day with, plus أخدت, minus أعطيت.
-const cashOf = d => { if (!d || d.opening == null) return null; const r = totals(dayTxs(d)); return d.opening + r.took - r.gave; };
-const lastClosedCash = shopId => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x.opening != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? cashOf(d) : null; };
+// Device sales paid into the cashier drawer add to it too; the accessory drawer has its own start balance.
+const cashOf = d => { if (!d || d.opening == null) return null; const r = totals(dayTxs(d)); return d.opening + r.took - r.gave + saleTot(daySales(d)).cashier; };
+const accOf = d => (!d || d.accOpening == null) ? null : d.accOpening + saleTot(daySales(d)).acc;
+const lastClosed = (shopId, key, fn) => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x[key] != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? fn(d) : null; };
+const lastClosedCash = (shopId, drawer = 'cashier') => drawer === 'acc' ? lastClosed(shopId, 'accOpening', accOf) : lastClosed(shopId, 'opening', cashOf);
 const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
 const shopPills = (cur, action, all) => (S.shops.length < 2 && !all) ? '' :
   `<div class="shops">${[...(all ? [['all', 'المحلين']] : []), ...S.shops.map(s => [s.id, s.name])].map(([id, n]) => `<button class="${cur === id ? 'on' : ''}" data-a="${action}" data-v="${id}">${esc(n)}</button>`).join('')}</div>`;
@@ -235,6 +260,29 @@ function item(x, o = {}){
     <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${x.note ? `<small class="note">${esc(x.note)}</small>` : ''}${flag}</div>
     <div class="end"><span class="amt ${x.type}-t">${money(x.amount)}</span>${end}</div></li>`;
 }
+// A device sale row: what was sold, where the money went, and the profit.
+function saleItem(x, o = {}){
+  const sub = [];
+  if (o.date) sub.push(dayLabel(dayOf(x.ts)));
+  sub.push(tm(x.ts));
+  if (o.shop) sub.push(esc(shop(x.shopId)?.name));
+  if (o.who) sub.push(esc(user(x.userId)?.name));
+  let end = o.end || '';
+  if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`;
+  if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
+  const profit = x.qty * (x.price - x.buy);
+  return `<li class="item sale ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''}" data-id="${x.id}">
+    <span class="av devav" aria-hidden="true">${icon.dev}</span>
+    <div class="mid"><b>${esc(x.name)}${x.qty > 1 ? ` <span class="num muted">× ${x.qty}</span>` : ''}</b>
+      <small><span class="tag pay-${x.pay}">${PAY[x.pay]}</span>${x.voucher ? ` بون <span class="num">${esc(x.voucher)}</span> ·` : ''} ${sub.join(' · ')}</small>
+      <small class="note">مكسب <span class="num ${profit < 0 ? 'gave-t' : 'took-t'}">${nf(profit)}</span>${x.qty > 1 ? ` · الواحد <span class="num">${nf(x.price)}</span>` : ''}</small>
+      ${x.deleted ? '<small class="flag">ممسوح، والجهاز رجع المخزن</small>' : ''}</div>
+    <div class="end"><span class="amt">${money(x.qty * x.price)}</span>${end}</div></li>`;
+}
+// Txs and sales of one list, newest first.
+const mixed = (txs, sales, o) => [...txs.map(x => ({ts:x.ts, h:() => item(x, o)})), ...sales.map(x => ({ts:x.ts, h:() => saleItem(x, o)}))].sort((a, b) => b.ts - a.ts).map(r => r.h()).join('');
+const drawersLine = d => { const acc = accOf(d), h = d ? saleTot(daySales(d)).hcash : 0;
+  return `<div class="drawers"><span><small>درج الإكسسوار</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span><span><small>اتش كاش (قسط)</small><b class="num">${nf(h)}</b></span></div>`; };
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
 /* ---------- screens ---------- */
@@ -275,15 +323,17 @@ function renderCashier(){
   if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
   const od = openDay(s.id);
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
+  const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cash = cashOf(od);
-  return `${band(`<div class="cash"><small>رصيد الخزنة</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
+  return `${band(`<div class="cash"><small>درج الكاشير</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
+      <button class="act sell" data-a="sell"><span class="ic">${icon.dev}</span>بيع جهاز</button>
     </div>
-    <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length}</span></div>
-      ${list.length ? `<ul class="list">${list.map(x => item(x, {mine:true})).join('')}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت.</p>`}
+    <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length + sales.length}</span></div>
+      ${list.length + sales.length ? `<ul class="list">${mixed(list, sales, {mine:true})}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت أو بيع جهاز.</p>`}
     </section>
   </main>`;
 }
@@ -292,12 +342,15 @@ function renderAdmin(){
   const pend = pendingList();
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck).length;
   const unread = S.notes.filter(n => !n.read).length;
-  const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
+  const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['dev','الأجهزة',0],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
+  const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop);
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
       <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div class="pair"><span><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></span><span><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></span></div></div>`
+    : ui.tab === 'dev' ? `${shopPills(ui.dshop, 'dshop', true)}
+      <div class="sum"><div><small>أجهزة في المخزن</small><b class="num">${ds.reduce((a, d) => a + d.qty, 0)}</b></div><div><small>قيمتها بسعر الشراء</small><b class="num">${nf(ds.reduce((a, d) => a + d.qty * d.buy, 0))}</b></div></div>`
     : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
-  const body = {kenash:tabKenash, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
+  const body = {kenash:tabKenash, dev:tabDev, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
   return `${band(top)}<main class="wrap admin gut">${body}</main>
     <nav class="nav" aria-label="الأقسام"><div class="in">${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
 }
@@ -310,11 +363,13 @@ function openDaysCard(){
     if (!d) return `<li class="item"><span class="lockic sm off" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b><small>مفيش يوم مفتوح</small></div>
       <div class="end"><button class="btn sm" data-a="opening" data-v="${sh.id}">ابدأ برصيد</button></div></li>`;
-    const r = totals(dayTxs(d)), cash = cashOf(d);
+    const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = saleTot(daySales(d));
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
-      <div class="mid"><b>${esc(sh.name)}</b><div class="cashline">${cash == null ? '<span class="gave-t">مفيش رصيد بداية</span>' : `<span class="num">${nf(cash)}</span> <small>في الخزنة</small>`}</div>
-        <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small></div>
-      <div class="end" style="gap:6px"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل</button></div></li>`;
+      <div class="mid"><b>${esc(sh.name)}</b>
+        <div class="mini3"><span><small>الكاشير</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span><span><small>الإكسسوار</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span><span><small>اتش كاش</small><i class="num">${nf(st.hcash)}</i></span></div>
+        <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small>
+        ${st.count ? `<small>${st.count} جهاز اتباع · مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
+        <div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
   }).join('')}</ul></section>`;
 }
 function tabKenash(){
@@ -331,20 +386,37 @@ function tabKenash(){
     ${recent.length ? `<section><h2>آخر اللي اتنقل</h2>
       <ul class="list">${recent.map(x => item(x, {date:true, end:`<button class="btn link" data-a="untransfer" data-v="${x.id}">رجّعها</button>`})).join('')}</ul></section>` : ''}`;
 }
+// Stock per shop: Hesham adds devices and quantities; sales take them out.
+function tabDev(){
+  const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop).sort((a, b) => (b.qty > 0) - (a.qty > 0) || a.name.localeCompare(b.name, 'ar'));
+  const sl = S.sales.filter(s => !s.deleted && (ui.dshop === 'all' || s.shopId === ui.dshop)), st = saleTot(sl.filter(s => dayOf(s.ts) === today()));
+  const recent = [...sl].sort((a, b) => b.ts - a.ts).slice(0, 15);
+  return `<button class="btn primary wide" data-a="devNew" style="box-shadow:var(--shadow)">+ ضيف جهاز للمخزن</button>
+    ${ds.length ? `<section><h2>المخزن</h2><ul class="list">${ds.map(d => `<li class="item tap" data-a="devEdit" data-v="${d.id}">
+      <span class="av devav" aria-hidden="true">${icon.dev}</span>
+      <div class="mid"><b>${esc(d.name)}</b><small>شراء <span class="num">${nf(d.buy)}</span> · بيع <span class="num">${nf(d.sell)}</span>${ui.dshop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</small></div>
+      <div class="end"><span class="stock ${d.qty ? '' : 'out'}"><b class="num">${d.qty}</b><small>${d.qty ? 'متاح' : 'خلص'}</small></span></div></li>`).join('')}</ul></section>`
+      : `<p class="empty">المخزن فاضي. ضيف أول جهاز.</p>`}
+    ${st.count ? `<section><h2>مبيعات النهارده</h2><div class="kpis3 card"><div><small>اتباع</small><b class="num">${st.count}</b></div><div><small>بفلوس</small><b class="num">${nf(st.total)}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div></div></section>` : ''}
+    ${recent.length ? `<section><h2>آخر المبيعات</h2><ul class="list">${recent.map(x => saleItem(x, {date:true, shop:ui.dshop === 'all', who:true})).join('')}</ul></section>` : ''}`;
+}
 function tabTxs(){
   const f = ui.f;
   const days = S.days.filter(d => f.shop === 'all' || d.shopId === f.shop).sort((a, b) => (a.closedAt ? 1 : 0) - (b.closedAt ? 1 : 0) || b.openedAt - a.openedAt);
   return `${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
     ${days.length ? days.map(d => {
-      const list = dayTxs(d).sort((a, b) => b.ts - a.ts), r = totals(list), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
+      const list = dayTxs(d), r = totals(list), sl = S.sales.filter(s => s.dayId === d.id), st = saleTot(sl), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
+      const o = {who:true, admin:true};
       return `<section class="day ${open ? 'open' : ''}">
         <button class="dayrow" data-a="toggleDay" data-v="${d.id}" aria-expanded="${open}">
           <span class="dname"><b>${dayLabel(dayOf(d.openedAt))}${f.shop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</b>
-            <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة</small></span>
+            <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}</small></span>
           <span class="dtot">${d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
-        ${open ? (list.length ? `<ul class="list">${list.map(x => item(x, {who:true, admin:true,
-            end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})).join('')}</ul>`
+        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b> · كاشير <span class="num">${nf(st.cashier)}</span> · إكسسوار <span class="num">${nf(st.acc)}</span> · اتش كاش <span class="num">${nf(st.hcash)}</span>${d.accOpening != null ? ` · درج الإكسسوار <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
+          + (list.length + sl.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
+            end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
+            ...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
           : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn dark" data-a="closeDay" data-v="${d.shopId}">قفل اليوم ده</button>`) : ''}</section>`;
     }).join('') : `<p class="empty">لسه مفيش أيام.</p>`}
     <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
@@ -364,7 +436,7 @@ function tabSet(){
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
         <div class="field"><label for="nu-shop">المحل</label><select id="nu-shop" name="shop"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${'' === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
         <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>
-    <section><h2 class="gave-t">مسح كل الحركات</h2><div class="card"><p class="muted small">بيمسح كل الحركات والإشعارات نهائي من المحلين. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
+    <section><h2 class="gave-t">مسح كل الحركات</h2><div class="card"><p class="muted small">بيمسح كل الحركات ومبيعات الأجهزة والإشعارات نهائي من المحلين. المخزن بيفضل زي ما هو. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
       <button class="btn danger" data-a="wipe">امسح كل الحركات</button></div></section>`;
 }
 
@@ -380,6 +452,16 @@ function nameOptions(q, sel){
   if (nq && !exact) h += `<label class="pick new"><input type="radio" name="party" value="__new" ${sel === '__new' ? 'checked' : ''}><span>+ ${esc(q.trim())} (جديد)</span></label>`;
   return h || `<p>اكتب الاسم فوق.</p>`;
 }
+function devOptions(shopId, q){
+  const nq = norm(q);
+  const list = S.devices.filter(d => d.shopId === shopId && d.qty > 0 && (!nq || norm(d.name).includes(nq))).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  return list.length ? list.map(d => `<li class="item tap" data-a="pickDev" data-v="${d.id}"><span class="av devav" aria-hidden="true">${icon.dev}</span>
+    <div class="mid"><b>${esc(d.name)}</b><small>متاح <span class="num">${d.qty}</span> · شراء <span class="num">${nf(d.buy)}</span></small></div>
+    <div class="end"><span class="amt">${money(d.sell)}</span></div></li>`).join('')
+    : `<li class="empty">${nq ? 'مفيش جهاز بالاسم ده في المخزن.' : 'مفيش أجهزة في مخزن المحل. هشام بيضيفها من قسم الأجهزة.'}</li>`;
+}
+const sellTot = (m, d) => { const p = Number(m.amt || 0), pr = m.qty * (p - d.buy);
+  return `الإجمالي <b class="num">${nf(m.qty * p)}</b> · مكسب <b class="num ${pr < 0 ? 'gave-t' : 'took-t'}">${nf(pr)}</b>`; };
 function sheet(head, body, cls = ''){
   return `<div class="overlay" data-a="closeModal"><div class="sheet" data-a="noop" role="dialog" aria-modal="true">
     <div class="sh ${cls}">${head}${xBtn}</div><div class="sb">${body}</div></div></div>`;
@@ -423,23 +505,64 @@ function renderModal(){
       <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
       <button class="btn danger wide">امسح</button></form>`);
   }
+  if (m.kind === 'sell'){
+    const sid = m.shopId;
+    if (!m.deviceId) return sheet(`<h2 class="sht"><span class="ic-s">${icon.dev}</span>بيع جهاز</h2>`, `
+      <input id="dq" type="search" placeholder="دوّر على الجهاز" autocomplete="off" value="${esc(m.q || '')}">
+      <ul class="list devpick" id="dlist">${devOptions(sid, m.q || '')}</ul>`, 'sell');
+    const d = device(m.deviceId); if (!d){ ui.modal = null; return ''; }
+    return sheet(`<h2 class="sht"><span class="ic-s">${icon.dev}</span>${esc(d.name)}</h2>`, `
+      ${m.fixed ? '' : `<button type="button" class="back" data-a="sellBack">→ جهاز تاني</button>`}
+      <p class="muted small" style="text-align:center">متاح <span class="num">${d.qty}</span> · سعر الشراء <span class="num">${nf(d.buy)}</span></p>
+      <p class="pinlbl">سعر البيع${m.qty > 1 ? ' للواحد' : ''}</p>
+      <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
+      <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}" ${k === '⌫' ? 'aria-label="امسح رقم"' : ''}>${k}</button>`).join('')}</div>
+      <div class="qty"><span>الكمية</span><button type="button" data-a="qty" data-v="-1" aria-label="أقل" ${m.qty <= 1 ? 'disabled' : ''}>−</button><b class="num">${m.qty}</b><button type="button" data-a="qty" data-v="1" aria-label="أكتر" ${m.qty >= d.qty ? 'disabled' : ''}>+</button></div>
+      <div class="saletot" id="stot">${sellTot(m, d)}</div>
+      <p class="pinlbl">الفلوس راحت فين؟</p>
+      <div class="paygrid" role="radiogroup">${Object.entries(PAY).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
+      ${m.pay === 'hcash' ? `<div class="field"><label for="sv">رقم البون</label><input id="sv" inputmode="numeric" autocomplete="off" value="${esc(m.voucher || '')}" placeholder="اكتب رقم بون اتش كاش"></div>` : ''}
+      <p id="ferr" class="err" role="alert"></p>
+      <button class="btn primary wide" data-a="saveSale">سجّل البيع</button>`, 'sell');
+  }
+  if (m.kind === 'dev'){
+    const d = m.id ? device(m.id) : null;
+    return sheet(`<h2>${d ? esc(d.name) : 'جهاز جديد'}</h2>`, `<form id="devf" novalidate>
+      <div class="field"><label for="dv-shop">المحل</label><select id="dv-shop" name="shop">${S.shops.map(s => `<option value="${s.id}" ${(d ? d.shopId : (ui.dshop !== 'all' ? ui.dshop : '')) === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
+      <div class="field"><label for="dv-name">اسم الجهاز</label><input id="dv-name" name="name" value="${esc(d?.name || '')}" placeholder="مثلًا: سامسونج A15 128 جيجا" autocomplete="off"></div>
+      <div class="row2"><div class="field"><label for="dv-buy">سعر الشراء</label><input id="dv-buy" name="buy" inputmode="decimal" value="${d ? d.buy : ''}" autocomplete="off"></div>
+        <div class="field"><label for="dv-sell">سعر البيع</label><input id="dv-sell" name="sell" inputmode="decimal" value="${d ? d.sell : ''}" autocomplete="off"></div></div>
+      <div class="field"><label for="dv-qty">${d ? 'الكمية في المخزن دلوقتي' : 'الكمية'}</label><input id="dv-qty" name="qty" inputmode="numeric" value="${d ? d.qty : '1'}" autocomplete="off"></div>
+      <p id="ferr" class="err" role="alert"></p>
+      <button class="btn primary wide">${d ? 'احفظ' : 'ضيف للمخزن'}</button>
+      ${d ? `<div class="row2" style="margin-top:4px">${d.qty ? `<button type="button" class="btn" data-a="devSell" data-v="${d.id}">بيع من هنا</button>` : '<span></span>'}<button type="button" class="btn danger" data-a="devDel" data-v="${d.id}">شيله من المخزن</button></div>` : ''}</form>`);
+  }
+  if (m.kind === 'delSale'){
+    const x = S.sales.find(s => s.id === m.id); if (!x){ ui.modal = null; return ''; }
+    return sheet(`<h2>تمسح البيعة دي؟</h2>`, `
+      <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${saleItem(x, {})}</ul>
+      <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${PAY[x.pay]}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
+      <button class="btn danger wide" data-a="delSaleOk">امسح</button>`);
+  }
   if (m.kind === 'opening'){
-    const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId);
+    const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId, m.drawer);
     return sheet(`<h2>رصيد بداية ${esc(sh.name)}</h2>`, `
-      <p class="muted small" style="text-align:center">${od ? 'الفلوس اللي في الخزنة لما اليوم بدأ.' : 'هيبدأ يوم جديد بالرصيد ده.'} الكاشير هيشوف الرصيد بيزيد مع أخدت ويقل مع أعطيت.</p>
+      <div class="seg" role="tablist">${[['cashier', 'درج الكاشير'], ['acc', 'درج الإكسسوار']].map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>
+      <p class="muted small" style="text-align:center">${od ? 'الفلوس اللي في الدرج لما اليوم بدأ.' : 'هيبدأ يوم جديد بالرصيد ده.'} ${m.drawer === 'acc' ? 'بيزيد مع الأجهزة اللي فلوسها راحت درج الإكسسوار.' : 'بيزيد مع أخدت وبيع الأجهزة، ويقل مع أعطيت.'}</p>
       ${last != null ? `<button class="btn sm" data-a="useLast" style="align-self:center">آخر يوم قفل على ${nf(last)}، استخدمه</button>` : ''}
       <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}">${k}</button>`).join('')}</div>
       <p id="ferr" class="err" role="alert"></p>
-      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد البداية</button>`);
+      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد ${m.drawer === 'acc' ? 'درج الإكسسوار' : 'درج الكاشير'}</button>`);
   }
   if (m.kind === 'closeDay'){
     const sh = shop(m.shopId), od = openDay(m.shopId); if (!sh || !od){ ui.modal = null; return ''; }
-    const list = dayTxs(od), r = totals(list), waiting = list.filter(t => live(t) && !t.transferred).length;
+    const list = dayTxs(od), r = totals(list), waiting = list.filter(t => live(t) && !t.transferred).length, st = saleTot(daySales(od));
     return sheet(`<h2>قفل يوم ${esc(sh.name)}</h2>`, `
       <div class="lockhero"><span class="lockic">${icon.lock}</span>
         <p>الحركات هتختفي من عند الكاشير ويبدأ يوم جديد. هتفضل عندك في السجل وفي قسم كناش.</p></div>
-      ${od.opening != null ? `<div class="kpis3"><div><small>بداية</small><b class="num">${nf(od.opening)}</b></div><div><small>الخزنة دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div><div><small>حركة</small><b class="num">${r.count}</b></div></div>` : ''}
+      ${od.opening != null ? `<div class="kpis3"><div><small>بداية الكاشير</small><b class="num">${nf(od.opening)}</b></div><div><small>درج الكاشير دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div><div><small>درج الإكسسوار</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div></div>` : ''}
+      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div><div><small>اتش كاش</small><b class="num">${nf(st.hcash)}</b></div></div>` : ''}
       <div class="kpis3"><div><small>حركة</small><b class="num">${r.count}</b></div>
         <div><small>أخدت</small><b class="num took-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num gave-t">${nf(r.gave)}</b></div></div>
       <p class="muted small" style="text-align:center">من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)} لحد دلوقتي${waiting ? ` · ${waiting} لسه ما اتنقلوش لكناش` : ''}</p>
@@ -585,16 +708,20 @@ const A = {
   logout(){
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
-    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[]};
+    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     sb.auth.signOut().finally(() => loadLogin().then(render));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
   type(v){ ui.modal = {kind:'tx', type:v, amt:''}; },
   kp(v){
     const m = ui.modal; let a = m.amt || '';
+    // a pre-filled number (the device's price, the current balance) is replaced by the first digit typed
+    if (m.fresh && v !== '⌫') a = '';
+    m.fresh = false;
     if (v === '⌫') a = a.slice(0, -1); else if ((a + v).length <= 9) a = (a + v).replace(/^0+/, '');
     m.amt = a;
     const el = document.querySelector('#amt .num'); if (el){ el.textContent = a ? Number(a).toLocaleString('en-US') : '0'; replay(el.parentNode, 'bump'); }
+    const stot = document.getElementById('stot'), d = m.kind === 'sell' && device(m.deviceId); if (stot && d) stot.innerHTML = sellTot(m, d);
     try { navigator.vibrate?.(8); } catch(e){}
     return false;
   },
@@ -644,17 +771,59 @@ const A = {
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
   wipe(){ ui.modal = {kind:'wipe'}; },
-  opening(v){ const d = openDay(v); ui.modal = {kind:'opening', shopId:v, amt:d && d.opening != null ? String(d.opening) : ''}; },
-  useLast(){ const last = lastClosedCash(ui.modal.shopId); ui.modal.amt = String(Math.max(0, Math.round(last))); },
+  opening(v){ ui.modal = {kind:'opening', shopId:v}; A.drawer('cashier'); },
+  drawer(v){ const m = ui.modal, d = openDay(m.shopId), cur = d && (v === 'acc' ? d.accOpening : d.opening); m.drawer = v; m.amt = cur != null ? String(cur) : ''; m.fresh = true; },
+  useLast(){ const last = lastClosedCash(ui.modal.shopId, ui.modal.drawer); ui.modal.amt = String(Math.max(0, Math.round(last))); },
   saveOpening(){
     const m = ui.modal, amount = parseFloat(m.amt || '');
-    if (!(amount >= 0) || m.amt === '') { formErr('اكتب الرقم اللي في الخزنة.'); return false; }
-    const sid = m.shopId, od = openDay(sid);
+    if (!(amount >= 0) || m.amt === '') { formErr('اكتب الرقم اللي في الدرج.'); return false; }
+    const sid = m.shopId, od = openDay(sid), key = m.drawer === 'acc' ? 'accOpening' : 'opening';
     op(() => {
-      if (od) od.opening = amount;
-      else S.days.push({id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:amount});
-      ui.modal = null; toast(`رصيد البداية ${nf(amount)} ✓`);
-    }, async () => { must(await sb.rpc('set_opening_balance', {p_shop:sid, p_amount:amount})); await refresh(); }, 'ما اتحفظش.');
+      if (od) od[key] = amount;
+      else S.days.push({id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:null, accOpening:null, [key]:amount});
+      ui.modal = null; toast(`رصيد ${PAY[m.drawer]} ${nf(amount)} ✓`);
+    }, async () => { must(await sb.rpc('set_opening_balance', {p_shop:sid, p_amount:amount, p_drawer:m.drawer})); await refresh(); }, 'ما اتحفظش.');
+    return false;
+  },
+  /* device sales */
+  sell(){ ui.modal = {kind:'sell', shopId:me.role === 'admin' ? (ui.dshop !== 'all' ? ui.dshop : S.shops[0]?.id) : me.shop_id, deviceId:null, q:''}; },
+  pickDev(v){ const d = device(v); Object.assign(ui.modal, {deviceId:v, amt:String(d.sell || ''), fresh:true, qty:1, pay:null, voucher:''}); },
+  sellBack(){ ui.modal.deviceId = null; },
+  qty(v){ const m = ui.modal, d = device(m.deviceId); m.qty = Math.max(1, Math.min(d.qty, m.qty + Number(v))); },
+  pay(v){ ui.modal.pay = v; },
+  saveSale(){
+    const m = ui.modal, d = device(m.deviceId), price = parseFloat(m.amt || '');
+    if (!(price > 0)) { formErr('اكتب سعر البيع.'); return false; }
+    if (m.qty > d.qty) { formErr(`المتاح ${d.qty} بس.`); return false; }
+    if (!m.pay) { formErr('اختار الفلوس راحت فين.'); return false; }
+    const voucher = String(m.voucher || '').trim();
+    if (m.pay === 'hcash' && !voucher) { formErr('اكتب رقم البون.'); document.getElementById('sv')?.focus(); return false; }
+    const sid = d.shopId, od = openDay(sid), day = od || {id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:null, accOpening:null};
+    const s = {id:uuid(), ts:Date.now(), shopId:sid, dayId:day.id, deviceId:d.id, name:d.name, qty:m.qty, buy:d.buy, price, pay:m.pay, voucher:m.pay === 'hcash' ? voucher : '', userId:me.id, deleted:false, pending:!DEMO};
+    op(() => { if (!od) S.days.push(day); S.sales.push(s); d.qty -= s.qty; ui.modal = null; toast(`اتباع ${d.name} بـ ${nf(s.qty * price)} ✓`); try { navigator.vibrate?.(20); } catch(e){} },
+      async () => {
+        must(await sb.rpc('sell_device', {p_id:s.id, p_device:d.id, p_qty:s.qty, p_price:price, p_pay:s.pay, p_voucher:s.voucher || null}));
+        if (!od) await refresh().catch(() => {});
+        s.pending = false; softRender();
+      }, 'البيعة ما اتسجلتش.');
+    return false;
+  },
+  delSale(v){ ui.modal = {kind:'delSale', id:v}; },
+  delSaleOk(){
+    const s = S.sales.find(x => x.id === ui.modal.id), d = device(s.deviceId);
+    op(() => { s.deleted = true; if (d) d.qty += s.qty; ui.modal = null; toast('البيعة اتمسحت والجهاز رجع المخزن'); },
+       async () => must(await sb.rpc('delete_sale', {p_id:s.id})), 'ما اتمسحتش.');
+    return false;
+  },
+  dshop(v){ ui.dshop = v; },
+  devNew(){ ui.modal = {kind:'dev', id:null}; },
+  devEdit(v){ ui.modal = {kind:'dev', id:v}; },
+  devSell(v){ const d = device(v); ui.modal = {kind:'sell', shopId:d.shopId, deviceId:v, amt:String(d.sell || ''), fresh:true, qty:1, pay:null, voucher:'', fixed:true}; },
+  devDel(v){
+    const d = device(v);
+    if (!confirm(`تشيل ${d.name} من المخزن؟ المبيعات القديمة بتاعته هتفضل.`)) return false;
+    op(() => { S.devices = S.devices.filter(x => x.id !== v); ui.modal = null; toast('اتشال من المخزن'); },
+       async () => must(await sb.from('devices').update({archived:true}).eq('id', v)), 'ما اتشالش.');
     return false;
   },
   closeDay(v){ ui.modal = {kind:'closeDay', shopId:v, pin:''}; },
@@ -750,6 +919,21 @@ const F = {
       must(await sb.from('profiles').update({shop_id:shopId}).eq('id', r.id));
     }, {errId:'uerr', done:() => toast(`${name} اتضاف`)});
   },
+  devf(fd){
+    const d = ui.modal.id ? device(ui.modal.id) : null;
+    const name = String(fd.get('name') || '').trim().replace(/\s+/g, ' '), shopId = fd.get('shop');
+    const buy = parseFloat(latin(fd.get('buy')).replace(/,/g, '')), sell = parseFloat(latin(fd.get('sell')).replace(/,/g, '')), qty = Number(latin(fd.get('qty')).trim());
+    if (!name) return formErr('اكتب اسم الجهاز.');
+    if (!(buy >= 0)) return formErr('اكتب سعر الشراء.');
+    if (!(sell >= 0)) return formErr('اكتب سعر البيع.');
+    if (!Number.isInteger(qty) || qty < 0) return formErr('الكمية لازم تكون رقم صحيح.');
+    const row = {shop_id:shopId, name, buy_price:buy, sell_price:sell, qty};
+    if (d) op(() => { Object.assign(d, {shopId, name, buy, sell, qty}); ui.modal = null; toast(`${name} اتحفظ`); },
+      async () => must(await sb.from('devices').update(row).eq('id', d.id)), 'ما اتحفظش.');
+    else { const id = uuid();
+      op(() => { S.devices.push({id, shopId, name, buy, sell, qty, archived:false}); ui.modal = null; toast(`${name} اتضاف للمخزن (${qty})`); },
+        async () => must(await sb.from('devices').insert({id, ...row})), 'ما اتضافش.'); }
+  },
   shopsf(fd){
     const changes = S.shops.map(s => [s, String(fd.get(s.id) || '').trim()]).filter(([s, n]) => n && n !== s.name);
     op(() => { changes.forEach(([s, n]) => s.name = n); toast('الأسامي اتحفظت'); },
@@ -785,6 +969,8 @@ document.addEventListener('input', e => {
     const pl = document.getElementById('plist'), sel = pl.querySelector('input:checked')?.value || null;
     pl.innerHTML = nameOptions(e.target.value, sel === '__new' ? null : sel);
   }
+  else if (e.target.id === 'dq' && ui.modal?.kind === 'sell'){ ui.modal.q = e.target.value; document.getElementById('dlist').innerHTML = devOptions(ui.modal.shopId, e.target.value); }
+  else if (e.target.id === 'sv' && ui.modal?.kind === 'sell') ui.modal.voucher = latin(e.target.value);
 });
 document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn) fn(new FormData(e.target)); });
 document.addEventListener('keydown', e => {
@@ -815,9 +1001,15 @@ function demoData(role){
     tx('t7', t, 14, 0, 's1', 'u1', 'took', 0, 150)];
   const notes = [{id:'n1', ts:at(t, 14, 0), read:false, text:'أحمد: أخدت من محمد عبد الله 150 ج.م (المحل الأول)'}, {id:'n2', ts:at(t, 13, 10), read:false, text:'محمود: أعطيت لـ مصطفى الميكانيكي 950 ج.م (المحل التاني)'}];
   const days = [{id:'d0', shopId:'s1', openedAt:at(y, 9, 0), openedBy:'u1', closedAt:at(y, 23, 40), closedBy:'u1', opening:98000},
-    {id:'d1', shopId:'s1', openedAt:at(t, 10, 0), openedBy:'u1', closedAt:null, opening:100000}, {id:'d2', shopId:'s2', openedAt:at(t, 10, 30), openedBy:'u2', closedAt:null}];
+    {id:'d1', shopId:'s1', openedAt:at(t, 10, 0), openedBy:'u1', closedAt:null, opening:100000, accOpening:5000}, {id:'d2', shopId:'s2', openedAt:at(t, 10, 30), openedBy:'u2', closedAt:null}];
   txs.forEach(x => x.dayId = x.date === y ? 'd0' : (x.shopId === 's1' ? 'd1' : 'd2'));
-  S = {shops, users, parties, txs, notes, days};
+  const dv = (id, shopId, name, buy, sell, qty) => ({id, shopId, name, buy, sell, qty, archived:false});
+  const devices = [dv('v1', 's1', 'سامسونج A15 128 جيجا', 7800, 8500, 4), dv('v2', 's1', 'ريلمي C53', 6900, 7400, 2), dv('v3', 's1', 'آيفون 13 128 جيجا', 24500, 26500, 1),
+    dv('v4', 's1', 'شاومي ريدمي 13C', 5600, 6100, 0), dv('v5', 's2', 'أوبو A18', 5200, 5650, 3)];
+  const sl = (id, h, m, deviceId, qty, price, pay, voucher = '') => { const d = devices.find(x => x.id === deviceId);
+    return {id, ts:at(t, h, m), shopId:d.shopId, dayId:d.shopId === 's1' ? 'd1' : 'd2', deviceId, name:d.name, qty, buy:d.buy, price, pay, voucher, userId:d.shopId === 's1' ? 'u1' : 'u2', deleted:false}; };
+  const sales = [sl('x1', 11, 5, 'v1', 1, 8400, 'cashier'), sl('x2', 12, 20, 'v2', 1, 7400, 'acc'), sl('x3', 13, 45, 'v3', 1, 26500, 'hcash', '55821'), sl('x4', 12, 0, 'v5', 1, 5650, 'cashier')];
+  S = {shops, users, parties, txs, notes, days, devices, sales};
   me = users.find(u => u.role === (role === 'admin' ? 'admin' : 'cashier'));
   ui.shopId = 's1';
 }

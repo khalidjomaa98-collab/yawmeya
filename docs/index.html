@@ -20,6 +20,7 @@
   --bg:#f1f3f7; --surface:#ffffff; --sunk:#f4f6f9; --ink:#141a24; --muted:#5b6574; --line:#e1e5eb;
   --accent:#2457b3; --accent-ink:#ffffff; --strong:#14325e;
   --took:#0b8a4a; --took-soft:#e3f5eb; --gave:#d33a2f; --gave-soft:#fde8e6;
+  --acc:#7a3fc4; --acc-soft:#f1e9fb; --hc:#a35f00; --hc-soft:#fdf0dc; --cs:#2457b3; --cs-soft:#e6eefb;
   --shadow:0 1px 2px rgba(18,24,34,.06),0 8px 24px rgba(18,24,34,.08);
   --scrim:rgba(10,16,26,.55);
   --font:"IBM Plex Sans Arabic",Tahoma,"Segoe UI",Arial,sans-serif;
@@ -31,6 +32,7 @@
   --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
   --accent:#3f7be0; --accent-ink:#ffffff; --strong:#3f7be0;
   --took:#3cc683; --took-soft:#11291c; --gave:#ff7b70; --gave-soft:#331716;
+  --acc:#b98cf2; --acc-soft:#251a35; --hc:#f0b450; --hc-soft:#2e2311; --cs:#7aa6f0; --cs-soft:#152238;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.65); color-scheme:dark;
 }}
 *{box-sizing:border-box}
@@ -135,6 +137,47 @@ section{display:flex;flex-direction:column;gap:10px}
 .cash b.none{font-family:var(--font);font-size:1rem;font-weight:600;color:#ffd38a}
 .lockic.off{background:var(--sunk);color:var(--muted)}
 .dtot .num:first-child:not(.took-t){font-weight:700}
+.drawers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 6px}
+.drawers span{background:rgba(255,255,255,.1);border-radius:12px;padding:6px 10px;display:flex;flex-direction:column;align-items:center}
+.drawers small{color:var(--brand-muted);font-size:.8rem}
+.drawers b{font-size:1.15rem;font-weight:700}
+.acts .act.sell{grid-column:1/-1;min-height:72px;flex-direction:row;gap:12px;color:var(--cs)}
+.act.sell .ic{background:var(--cs);width:44px;height:44px} .act.sell .ic svg{width:24px;height:24px}
+.sheet .sh.sell{background:#2457b3;color:#fff}
+.ic-s svg{width:22px;height:22px;vertical-align:-4px}
+.devav{background:var(--cs-soft);color:var(--cs)} .devav svg{width:22px;height:22px}
+.tag.pay-cashier{background:var(--cs-soft);color:var(--cs)} .tag.pay-acc{background:var(--acc-soft);color:var(--acc)} .tag.pay-hcash{background:var(--hc-soft);color:var(--hc)}
+.stock{display:flex;flex-direction:column;align-items:center;min-width:48px;border-radius:12px;background:var(--took-soft);color:var(--took);padding:4px 8px;line-height:1.2}
+.stock b{font-size:1.2rem} .stock small{font-size:.72rem;font-weight:600}
+.stock.out{background:var(--gave-soft);color:var(--gave)}
+.devpick{box-shadow:none;border:1px solid var(--line)}
+.item.sale .mid b{white-space:normal}
+.mini3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:6px 0}
+.mini3 span{background:var(--sunk);border-radius:12px;padding:6px 4px;text-align:center;min-width:0}
+.mini3 small{display:block;font-size:.75rem;color:var(--muted)}
+.mini3 i{font-style:normal;font-weight:700;font-size:1.05rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini3 i.gave-t{font-family:var(--font);font-size:.85rem}
+.odbtns{display:flex;gap:8px;margin-top:8px}
+.odbtns .btn{flex:1}
+.devpick .empty{box-shadow:none}
+.sb .back{color:var(--accent)}
+.qty{display:flex;align-items:center;justify-content:center;gap:14px}
+.qty span{color:var(--muted);font-weight:600}
+.qty button{width:48px;height:48px;border-radius:50%;border:0;background:var(--sunk);font-size:1.5rem;font-weight:700;color:var(--ink)}
+.qty button:disabled{opacity:.35}
+.qty b{font-size:1.6rem;min-width:2ch;text-align:center}
+.saletot{text-align:center;background:var(--sunk);border-radius:14px;padding:10px}
+.paygrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.paygrid button{border:2px solid var(--line);background:var(--surface);border-radius:14px;min-height:60px;font-weight:700;font-size:.95rem;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.25;padding:6px 4px}
+.paygrid button small{font-weight:500;font-size:.75rem;color:var(--muted)}
+.paygrid .p-cashier.on{border-color:var(--cs);background:var(--cs-soft);color:var(--cs)}
+.paygrid .p-acc.on{border-color:var(--acc);background:var(--acc-soft);color:var(--acc)}
+.paygrid .p-hcash.on{border-color:var(--hc);background:var(--hc-soft);color:var(--hc)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:14px;padding:4px;gap:4px}
+.seg button{border:0;background:none;border-radius:10px;min-height:44px;font-weight:700;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.daysales{font-size:.88rem;color:var(--muted);padding:2px 6px 8px;line-height:1.8}
+.daysales b{color:var(--ink)}
 .dayinfo{color:var(--brand-muted);font-size:.85rem}
 .card.flat{box-shadow:none;padding:12px}
 .took-bg{background:var(--took-soft)} .gave-bg{background:var(--gave-soft)}
@@ -195,7 +238,7 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .steps{display:flex;justify-content:center;gap:6px;color:var(--muted);font-size:.85rem}
 
 .nav{position:fixed;inset:auto 0 0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.nav .in{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+.nav .in{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 .nav button{border:0;background:none;padding:10px 2px;font-size:.82rem;font-weight:600;color:var(--muted);position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:62px}
 .nav button svg{width:24px;height:24px}
 .nav button.on{color:var(--accent)}
@@ -280,7 +323,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="config.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
