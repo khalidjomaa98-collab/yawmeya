@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 20; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 21; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -68,11 +68,16 @@ const TAB_ORDER = ['kenash', 'dev', 'txs', 'notes', 'set'];
 
 // Where the money from a device sale went.
 // Hesham can rename them and hide the accessory drawer / H Cash from الإعدادات.
-const PAY = {cashier:'درج الكاشير', acc:'درج الإكسسوار', hcash:'اتش كاش'};
-const DRAWER_ON = {cashier:true, acc:true, hcash:true};
-const dn = k => esc(PAY[k]);
-const onKeys = () => Object.keys(PAY).filter(k => DRAWER_ON[k]);
-function setDrawers(rows){ (rows || []).forEach(r => { if (r.key in PAY){ PAY[r.key] = r.name; DRAWER_ON[r.key] = r.key === 'cashier' || !!r.active; } }); }
+// Each shop has its own drawers (one shop can have the accessory drawer or H Cash and the other not).
+const DRAWER_KEYS = ['cashier', 'acc', 'hcash'];
+const DRAWER_DEF = {cashier:'درج الكاشير', acc:'درج الإكسسوار', hcash:'اتش كاش'};
+let DRW = {}; // shopId -> key -> {name, active}
+const drw = (sid, k) => DRW[sid]?.[k] || {name:DRAWER_DEF[k], active:true};
+const payName = (k, sid) => drw(sid, k).name;
+const dn = (k, sid) => esc(payName(k, sid));
+const isOn = (sid, k) => k === 'cashier' || !!drw(sid, k).active;
+const onKeys = sid => DRAWER_KEYS.filter(k => isOn(sid, k));
+function setDrawers(rows){ (rows || []).forEach(r => { if (DRAWER_DEF[r.key]) (DRW[r.shop_id] ||= {})[r.key] = {name:r.name, active:r.key === 'cashier' || !!r.active}; }); }
 
 /* ---------- state ---------- */
 let S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
@@ -123,7 +128,7 @@ async function refresh(){
     admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null),
     sb.from('devices').select('*').eq('archived', false).order('name'),
     sb.from('device_sales').select('*').gte('ts', from + 'T00:00:00Z').order('ts', {ascending:false}).limit(3000),
-    sb.from('drawers').select('*').order('sort')
+    sb.from('shop_drawers').select('*')
   ]);
   setDrawers(must(drawers));
   S.devices = must(devices).map(mapDev);
@@ -158,7 +163,7 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'drawers']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'shop_drawers']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
@@ -166,7 +171,7 @@ function onChange(table, p){
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
   else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
   else if (table === 'devices'){ if (del || row.archived) S.devices = S.devices.filter(d => d.id !== (row?.id || old.id)); else upsert(S.devices, mapDev(row)); }
-  else if (table === 'drawers'){ if (!del) setDrawers([row]); }
+  else if (table === 'shop_drawers'){ if (!del) setDrawers([row]); }
   else if (table === 'device_sales'){ if (del) S.sales = S.sales.filter(s => s.id !== old.id); else upsert(S.sales, mapSale(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && me?.role === 'admin'){
@@ -302,15 +307,15 @@ function saleItem(x, o = {}){
   return `<li class="item sale ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''}" data-id="${x.id}">
     <span class="av devav" aria-hidden="true">${icon.dev}</span>
     <div class="mid"><b>${esc(x.name)}${x.qty > 1 ? ` <span class="num muted">× ${x.qty}</span>` : ''}</b>
-      <small><span class="tag pay-${x.pay}">${PAY[x.pay]}</span>${x.voucher ? ` بون <span class="num">${esc(x.voucher)}</span> ·` : ''} ${sub.join(' · ')}</small>
+      <small><span class="tag pay-${x.pay}">${dn(x.pay, x.shopId)}</span>${x.voucher ? ` بون <span class="num">${esc(x.voucher)}</span> ·` : ''} ${sub.join(' · ')}</small>
       <small class="note">مكسب <span class="num ${profit < 0 ? 'gave-t' : 'took-t'}">${nf(profit)}</span>${x.qty > 1 ? ` · الواحد <span class="num">${nf(x.price)}</span>` : ''}</small>
       ${x.deleted ? '<small class="flag">ممسوح، والجهاز رجع المخزن</small>' : ''}</div>
     <div class="end"><span class="amt">${money(x.qty * x.price)}</span>${end}</div></li>`;
 }
 // Txs and sales of one list, newest first.
 const mixed = (txs, sales, o) => [...txs.map(x => ({ts:x.ts, h:() => item(x, o)})), ...sales.map(x => ({ts:x.ts, h:() => saleItem(x, o)}))].sort((a, b) => b.ts - a.ts).map(r => r.h()).join('');
-const drawersLine = d => { const acc = accOf(d), h = d ? saleTot(daySales(d)).hcash : 0;
-  const parts = [DRAWER_ON.acc && `<span><small>${dn('acc')}</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span>`, DRAWER_ON.hcash && `<span><small>${dn('hcash')}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
+const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? saleTot(daySales(d)).hcash : 0;
+  const parts = [isOn(sid, 'acc') && `<span><small>${dn('acc', sid)}</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span>`, isOn(sid, 'hcash') && `<span><small>${dn('hcash', sid)}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
   return parts.length ? `<div class="drawers" style="--n:${parts.length}">${parts.join('')}</div>` : ''; };
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
@@ -354,7 +359,7 @@ function renderCashier(){
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cash = cashOf(od);
-  return `${band(`<div class="cash"><small>${dn('cashier')}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
+  return `${band(`<div class="cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
@@ -395,7 +400,7 @@ function openDaysCard(){
     const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = saleTot(daySales(d));
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b>
-        <div class="mini3" style="--n:${onKeys().length}"><span><small>${dn('cashier')}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${DRAWER_ON.acc ? `<span><small>${dn('acc')}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${DRAWER_ON.hcash ? `<span><small>${dn('hcash')}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
+        <div class="mini3" style="--n:${onKeys(sh.id).length}"><span><small>${dn('cashier', sh.id)}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${isOn(sh.id, 'acc') ? `<span><small>${dn('acc', sh.id)}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${isOn(sh.id, 'hcash') ? `<span><small>${dn('hcash', sh.id)}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
         <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small>
         ${st.count ? `<small>${st.count} جهاز اتباع · مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
         <div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
@@ -442,7 +447,7 @@ function tabTxs(){
             <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}</small></span>
           <span class="dtot">${d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
-        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${Object.keys(PAY).filter(k => DRAWER_ON[k] || st[k]).map(k => ` · ${dn(k)} <span class="num">${nf(st[k])}</span>`).join('')}${d.accOpening != null && DRAWER_ON.acc ? ` · رصيد ${dn('acc')} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
+        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${DRAWER_KEYS.filter(k => isOn(d.shopId, k) || st[k]).map(k => ` · ${dn(k, d.shopId)} <span class="num">${nf(st[k])}</span>`).join('')}${d.accOpening != null && isOn(d.shopId, 'acc') ? ` · رصيد ${dn('acc', d.shopId)} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
           + (list.length + sl.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
             ...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
@@ -458,9 +463,9 @@ function tabNotes(){
 function tabSet(){
   return `<section><h2>المحلات</h2><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></section>
     <section><h2>الأدراج</h2><form id="drawersf" class="card">
-      <p class="muted small">غيّر أسامي الأدراج زي ما تحب. الدرج اللي تقفله هيختفي من عند الكاشير ومن البيع، والمبيعات القديمة بتفضل زي ما هي.</p>
-      ${Object.keys(PAY).map(k => `<div class="drow"><div class="field"><label for="dr_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${k}" name="${k}" value="${dn(k)}" maxlength="40" autocomplete="off"></div>
-        ${k === 'cashier' ? '<span class="dfix">دايمًا شغال</span>' : `<label class="switch"><input type="checkbox" name="on_${k}" ${DRAWER_ON[k] ? 'checked' : ''}><span></span><small>شغال</small></label>`}</div>`).join('')}
+      <p class="muted small">كل محل ليه أدراجه. غيّر الأسامي زي ما تحب، والدرج اللي تقفله هيختفي من المحل ده بس (من عند الكاشير ومن البيع). المبيعات القديمة بتفضل زي ما هي.</p>
+      ${S.shops.map(sh => `<fieldset class="dshop"><legend>${esc(sh.name)}</legend>${DRAWER_KEYS.map(k => `<div class="drow"><div class="field"><label for="dr_${sh.id}_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${sh.id}_${k}" name="n|${sh.id}|${k}" value="${dn(k, sh.id)}" maxlength="40" autocomplete="off"></div>
+        ${k === 'cashier' ? '<span class="dfix">دايمًا شغال</span>' : `<label class="switch"><input type="checkbox" name="on|${sh.id}|${k}" ${isOn(sh.id, k) ? 'checked' : ''} aria-label="${dn(k, sh.id)} شغال في ${esc(sh.name)}"><span></span><small>شغال</small></label>`}</div>`).join('')}</fieldset>`).join('')}
       <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></section>
     <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
@@ -561,7 +566,7 @@ function renderModal(){
       <div class="qty"><span>الكمية</span><button type="button" data-a="qty" data-v="-1" aria-label="أقل" ${m.qty <= 1 ? 'disabled' : ''}>−</button><b class="num">${m.qty}</b><button type="button" data-a="qty" data-v="1" aria-label="أكتر" ${m.qty >= d.qty ? 'disabled' : ''}>+</button></div>
       <div class="saletot" id="stot">${sellTot(m, d)}</div>
       <p class="pinlbl">الفلوس راحت فين؟</p>
-      <div class="paygrid" role="radiogroup" style="--n:${onKeys().length}">${onKeys().map(k => [k, esc(PAY[k])]).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
+      <div class="paygrid" role="radiogroup" style="--n:${onKeys(sid).length}">${onKeys(sid).map(k => [k, dn(k, sid)]).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
       ${m.pay === 'hcash' ? `<div class="field"><label for="sv">رقم البون</label><input id="sv" inputmode="numeric" autocomplete="off" value="${esc(m.voucher || '')}" placeholder="اكتب رقم البون"></div>` : ''}
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn primary wide" data-a="saveSale">سجّل البيع</button>`, 'sell');
@@ -582,19 +587,19 @@ function renderModal(){
     const x = S.sales.find(s => s.id === m.id); if (!x){ ui.modal = null; return ''; }
     return sheet(`<h2>تمسح البيعة دي؟</h2>`, `
       <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${saleItem(x, {})}</ul>
-      <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${dn(x.pay)}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
+      <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${dn(x.pay, x.shopId)}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
       <button class="btn danger wide" data-a="delSaleOk">امسح</button>`);
   }
   if (m.kind === 'opening'){
     const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId, m.drawer);
     return sheet(`<h2>رصيد بداية ${esc(sh.name)}</h2>`, `
-      ${DRAWER_ON.acc ? '' : '<!--'}<div class="seg" role="tablist">${[['cashier', PAY.cashier], ['acc', PAY.acc]].map(([k, l]) => [k, esc(l)]).map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>${DRAWER_ON.acc ? '' : '-->'}
+      ${isOn(m.shopId, 'acc') ? '' : '<!--'}<div class="seg" role="tablist">${[['cashier', payName('cashier', m.shopId)], ['acc', payName('acc', m.shopId)]].map(([k, l]) => [k, esc(l)]).map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>${isOn(m.shopId, 'acc') ? '' : '-->'}
       <p class="muted small" style="text-align:center">${od ? 'الفلوس اللي في الدرج لما اليوم بدأ.' : 'هيبدأ يوم جديد بالرصيد ده.'} ${m.drawer === 'acc' ? 'بيزيد مع الأجهزة اللي فلوسها راحت درج الإكسسوار.' : 'بيزيد مع أخدت وبيع الأجهزة، ويقل مع أعطيت.'}</p>
       ${last != null ? `<button class="btn sm" data-a="useLast" style="align-self:center">آخر يوم قفل على ${nf(last)}، استخدمه</button>` : ''}
       <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}">${k}</button>`).join('')}</div>
       <p id="ferr" class="err" role="alert"></p>
-      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد ${dn(m.drawer)}</button>`);
+      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد ${dn(m.drawer, m.shopId)}</button>`);
   }
   if (m.kind === 'closeDay'){
     const sh = shop(m.shopId), od = openDay(m.shopId); if (!sh || !od){ ui.modal = null; return ''; }
@@ -602,8 +607,8 @@ function renderModal(){
     return sheet(`<h2>قفل يوم ${esc(sh.name)}</h2>`, `
       <div class="lockhero"><span class="lockic">${icon.lock}</span>
         <p>الحركات هتختفي من عند الكاشير ويبدأ يوم جديد. هتفضل عندك في السجل وفي قسم كناش.</p></div>
-      ${od.opening != null ? `<div class="kpis3"><div><small>بداية ${dn('cashier')}</small><b class="num">${nf(od.opening)}</b></div><div><small>${dn('cashier')} دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div>${DRAWER_ON.acc ? `<div><small>${dn('acc')}</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div>` : ''}</div>` : ''}
-      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div>${DRAWER_ON.hcash ? `<div><small>${dn('hcash')}</small><b class="num">${nf(st.hcash)}</b></div>` : ''}</div>` : ''}
+      ${od.opening != null ? `<div class="kpis3"><div><small>بداية ${dn('cashier', m.shopId)}</small><b class="num">${nf(od.opening)}</b></div><div><small>${dn('cashier', m.shopId)} دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div>${isOn(m.shopId, 'acc') ? `<div><small>${dn('acc', m.shopId)}</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div>` : ''}</div>` : ''}
+      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div>${isOn(m.shopId, 'hcash') ? `<div><small>${dn('hcash', m.shopId)}</small><b class="num">${nf(st.hcash)}</b></div>` : ''}</div>` : ''}
       <div class="kpis3"><div><small>حركة</small><b class="num">${r.count}</b></div>
         <div><small>أخدت</small><b class="num took-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num gave-t">${nf(r.gave)}</b></div></div>
       <p class="muted small" style="text-align:center">من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)} لحد دلوقتي${waiting ? ` · ${waiting} لسه ما اتنقلوش لكناش` : ''}</p>
@@ -847,7 +852,7 @@ const A = {
     op(() => {
       if (od) od[key] = amount;
       else S.days.push({id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:null, accOpening:null, [key]:amount});
-      ui.modal = null; toast(`رصيد ${PAY[m.drawer]}: ${nf(amount)} ✓`);
+      ui.modal = null; toast(`رصيد ${payName(m.drawer, sid)}: ${nf(amount)} ✓`);
     }, async () => { must(await sb.rpc('set_opening_balance', {p_shop:sid, p_amount:amount, p_drawer:m.drawer})); await refresh(); }, 'ما اتحفظش.');
     return false;
   },
@@ -1001,11 +1006,13 @@ const F = {
         async () => must(await sb.from('devices').insert({id, ...row})), 'ما اتضافش.'); }
   },
   drawersf(fd){
-    const rows = Object.keys(PAY).map(k => ({key:k, name:String(fd.get(k) || '').trim().replace(/\s+/g, ' '), active:k === 'cashier' || fd.get('on_' + k) === 'on'}));
+    const rows = S.shops.flatMap(sh => DRAWER_KEYS.map(k => ({shop_id:sh.id, key:k, name:String(fd.get(`n|${sh.id}|${k}`) || '').trim().replace(/\s+/g, ' '), active:k === 'cashier' || fd.get(`on|${sh.id}|${k}`) === 'on'})));
     if (rows.some(r => !r.name)) return formErr('كل درج لازم يكون ليه اسم.', 'derr');
-    const before = rows.map(r => ({key:r.key, name:PAY[r.key], active:DRAWER_ON[r.key]}));
-    op(() => { setDrawers(rows); toast('الأدراج اتحفظت'); },
-       async () => { for (const r of rows) must(await sb.from('drawers').update({name:r.name, active:r.active}).eq('key', r.key)); }, 'ما اتحفظتش.')
+    const changed = rows.filter(r => { const o = drw(r.shop_id, r.key); return o.name !== r.name || isOn(r.shop_id, r.key) !== r.active; });
+    if (!changed.length){ toast('مفيش تغيير'); render(); return; }
+    const before = changed.map(r => ({shop_id:r.shop_id, key:r.key, name:drw(r.shop_id, r.key).name, active:isOn(r.shop_id, r.key)}));
+    op(() => { setDrawers(changed); toast('الأدراج اتحفظت'); },
+       async () => { for (const r of changed) must(await sb.from('shop_drawers').update({name:r.name, active:r.active}).eq('shop_id', r.shop_id).eq('key', r.key)); }, 'ما اتحفظتش.')
       .then(ok => { if (!ok){ setDrawers(before); render(); } });
   },
   shopsf(fd){
@@ -1052,6 +1059,10 @@ document.addEventListener('keydown', e => {
   if (!me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
 });
 document.addEventListener('focusout', () => setTimeout(() => { if (ui.dirty && !ui.modal) softRender(); }, 50));
+// The bottom bar stays put: hide it while the keyboard is open so it doesn't ride up over the field being typed in.
+const isField = el => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(el.type)));
+document.addEventListener('focusin', e => { if (isField(e.target)) document.body.classList.add('typing'); });
+document.addEventListener('focusout', () => setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('typing'); }, 80));
 window.addEventListener('online', () => { ui.offline = false; if (me) refresh().then(render).catch(() => {}); else loadLogin().then(render); });
 window.addEventListener('offline', () => { ui.offline = true; render(); });
 // Catch up on anything missed while the phone was asleep.

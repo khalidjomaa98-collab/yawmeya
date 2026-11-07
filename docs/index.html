@@ -46,7 +46,7 @@
 }
 :root[data-theme="light"]{color-scheme:light}
 *{box-sizing:border-box}
-html,body{margin:0}
+html,body{margin:0;overscroll-behavior:none}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55;-webkit-tap-highlight-color:transparent;padding-bottom:env(safe-area-inset-bottom,0px)}
 [hidden]{display:none!important}
 h1,h2,h3{margin:0;line-height:1.35;font-weight:700}
@@ -247,7 +247,9 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .kstep .note{background:var(--sunk);border-radius:10px;padding:6px 12px}
 .steps{display:flex;justify-content:center;gap:6px;color:var(--muted);font-size:.85rem}
 
-.nav{position:fixed;inset:auto 0 0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.nav{position:fixed;inset:auto 0 0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px);transform:translateZ(0);backface-visibility:hidden;touch-action:manipulation}
+/* while typing, the keyboard would push the bar up over the field: hide it until typing is done */
+body.typing .nav{display:none}
 .nav .in{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 .nav button{border:0;background:none;padding:10px 2px;font-size:.82rem;font-weight:600;color:var(--muted);position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:62px}
 .nav button svg{width:24px;height:24px}
@@ -289,6 +291,8 @@ details summary::-webkit-details-marker{display:none}
 .sheet .sh{padding-block:14px 12px}
 .sheet .sb{gap:12px}
 /* drawer settings */
+.dshop{border:1px solid var(--line);border-radius:14px;padding:6px 12px 12px;margin:0;display:flex;flex-direction:column;gap:10px;min-width:0}
+.dshop legend{font-weight:700;padding:0 6px}
 .drow{display:flex;align-items:flex-end;gap:12px}
 .drow .field{flex:1;min-width:0}
 .dfix{font-size:.8rem;color:var(--muted);padding-bottom:12px;white-space:nowrap}
@@ -353,7 +357,6 @@ details summary::-webkit-details-marker{display:none}
   .wrap.enter.tab-next > *{animation:fromLeft .34s cubic-bezier(.2,.8,.2,1) both}
   .wrap.enter.tab-prev > *{animation:fromRight .34s cubic-bezier(.2,.8,.2,1) both}
   .navpill.move{animation:pillMove .42s cubic-bezier(.3,1.25,.5,1) both}
-  .nav button.on svg{animation:iconPop .4s cubic-bezier(.3,1.5,.5,1)}
   /* sheets: soft spring up, slide down when closing */
   .overlay .sheet{animation:sheetUp .38s cubic-bezier(.2,1.05,.3,1) both}
   .overlay.out{animation:fadeOut .22s ease-in forwards;pointer-events:none}
@@ -377,7 +380,6 @@ details summary::-webkit-details-marker{display:none}
 @keyframes fromLeft{from{transform:translateX(-28px);opacity:0}}
 @keyframes fromRight{from{transform:translateX(28px);opacity:0}}
 @keyframes pillMove{from{transform:translateX(calc(var(--from) * -100%))}}
-@keyframes iconPop{40%{transform:translateY(-3px) scale(1.15)}}
 @keyframes fadeOut{to{opacity:0}}
 @keyframes sheetDown{to{transform:translateY(60px);opacity:0}}
 @keyframes flashUp{25%{transform:scale(1.07);text-shadow:0 0 22px rgba(60,198,131,.85)}}
@@ -401,7 +403,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=20"></script>
-<script src="app.js?v=20"></script>
+<script src="config.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
