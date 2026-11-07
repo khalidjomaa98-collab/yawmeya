@@ -83,7 +83,10 @@ button{cursor:pointer}
 .band.tall .in{padding-bottom:56px}
 .wrap{max-width:680px;margin:18px auto 0;display:flex;flex-direction:column;gap:18px;padding-bottom:40px;position:relative}
 .wrap.lift{margin-top:-40px}
-.wrap.admin{padding-bottom:110px}
+.wrap.admin{padding-bottom:40px}
+/* owner screen: header + content scroll above a bar that is part of the layout, so it can never slide under the phone's buttons */
+.shell{height:100vh;height:100dvh;height:var(--app-h,100dvh);display:flex;flex-direction:column;overflow:hidden}
+.scroller{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .shops.light button{border-color:var(--line);color:var(--ink);background:var(--surface)}
 .shops.light button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .day{gap:8px}
@@ -247,7 +250,7 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .kstep .note{background:var(--sunk);border-radius:10px;padding:6px 12px}
 .steps{display:flex;justify-content:center;gap:6px;color:var(--muted);font-size:.85rem}
 
-.nav{position:fixed;inset:auto 0 0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px);transform:translateZ(0);backface-visibility:hidden;touch-action:manipulation}
+.nav{position:relative;flex-shrink:0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px);touch-action:manipulation}
 /* while typing, the keyboard would push the bar up over the field: hide it until typing is done */
 body.typing .nav{display:none}
 .nav .in{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
@@ -403,7 +406,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="config.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

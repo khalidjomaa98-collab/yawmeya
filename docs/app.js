@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 21; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 22; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -385,8 +385,9 @@ function renderAdmin(){
     : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, dev:tabDev, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
-  return `${band(top)}<main class="wrap admin gut">${body}</main>
-    <nav class="nav" aria-label="الأقسام"><div class="in"><span class="navpill${ui.navFrom != null ? ' move' : ''}" style="--to:${TAB_ORDER.indexOf(ui.tab)};--from:${ui.navFrom ?? TAB_ORDER.indexOf(ui.tab)}" aria-hidden="true"></span>${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
+  // The bar is part of the layout (not floating), and only the part above it scrolls, so it never slides away.
+  return `<div class="shell"><div class="scroller" id="scroller">${band(top)}<main class="wrap admin gut">${body}</main></div>
+    <nav class="nav" aria-label="الأقسام"><div class="in"><span class="navpill${ui.navFrom != null ? ' move' : ''}" style="--to:${TAB_ORDER.indexOf(ui.tab)};--from:${ui.navFrom ?? TAB_ORDER.indexOf(ui.tab)}" aria-hidden="true"></span>${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav></div>`;
 }
 // Shops whose day is still open: closing one clears the cashier's screen and starts a fresh day.
 // Each shop: its drawer right now, the start balance the owner typed, and closing the day.
@@ -676,11 +677,14 @@ function render(){
   const app = document.getElementById('app');
   const view = ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
   const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
+  // the owner screen scrolls inside #scroller: keep its place across redraws (a tab change sets ui.scrollTop = 0)
+  const oldSc = document.getElementById('scroller'), keepTop = ui.scrollTop ?? (oldSc ? oldSc.scrollTop : 0); ui.scrollTop = null;
   const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
   let h = ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
+  const sc = document.getElementById('scroller'); if (sc && keepTop) sc.scrollTop = keepTop;
   // whole screen slides in when you move to a different screen
   const entering = view !== lastView; lastView = view;
   if (entering) app.querySelectorAll('.band, .wrap, .login .in').forEach(el => el.classList.add('enter'));
@@ -807,7 +811,7 @@ const A = {
   },
   tab(v){
     if (v !== ui.tab) ui.navFrom = TAB_ORDER.indexOf(ui.tab);
-    ui.tab = v; window.scrollTo(0, 0);
+    ui.tab = v; ui.scrollTop = 0;
     if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
   },
   kshop(v){ ui.kshop = v; },
@@ -1111,6 +1115,10 @@ setInterval(checkUpdate, 3 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 document.addEventListener('click', () => { if (ui.reloadPending && !ui.modal) location.reload(); }, true);
 
+// Size the owner screen to the part of the phone screen that is really visible (some Android WebViews report a taller one).
+const setAppH = () => document.documentElement.style.setProperty('--app-h', Math.round(window.visualViewport?.height || innerHeight) + 'px');
+setAppH(); window.visualViewport?.addEventListener('resize', setAppH); window.addEventListener('resize', setAppH);
+window.addEventListener('orientationchange', () => setTimeout(setAppH, 300));
 applyTheme(themePref());
 darkMQ.addEventListener?.('change', () => { if (themePref() === 'auto') applyTheme('auto'); });
 (async function boot(){
