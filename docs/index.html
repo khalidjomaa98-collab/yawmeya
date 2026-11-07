@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>اليومية</title>
 <meta name="theme-color" content="#14325e">
+<script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <meta name="description" content="يومية المحلات: الكاشير بيسجل أخدت وأعطيت، وهشام بينقلها لكناش.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -27,7 +28,7 @@
   --num:"Readex Pro","IBM Plex Sans Arabic",Tahoma,sans-serif;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root{
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --brand:#122640; --brand-2:#1c3d68; --brand-muted:rgba(255,255,255,.7);
   --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
   --accent:#3f7be0; --accent-ink:#ffffff; --strong:#3f7be0;
@@ -35,6 +36,15 @@
   --acc:#b98cf2; --acc-soft:#251a35; --hc:#f0b450; --hc-soft:#2e2311; --cs:#7aa6f0; --cs-soft:#152238;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.65); color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --brand:#122640; --brand-2:#1c3d68; --brand-muted:rgba(255,255,255,.7);
+  --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
+  --accent:#3f7be0; --accent-ink:#ffffff; --strong:#3f7be0;
+  --took:#3cc683; --took-soft:#11291c; --gave:#ff7b70; --gave-soft:#331716;
+  --acc:#b98cf2; --acc-soft:#251a35; --hc:#f0b450; --hc-soft:#2e2311; --cs:#7aa6f0; --cs-soft:#152238;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35); --scrim:rgba(0,0,0,.65); color-scheme:dark;
+}
+:root[data-theme="light"]{color-scheme:light}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55;-webkit-tap-highlight-color:transparent;padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -137,7 +147,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .cash b.none{font-family:var(--font);font-size:1rem;font-weight:600;color:#ffd38a}
 .lockic.off{background:var(--sunk);color:var(--muted)}
 .dtot .num:first-child:not(.took-t){font-weight:700}
-.drawers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 6px}
+.drawers{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:8px;margin:2px 0 6px}
 .drawers span{background:rgba(255,255,255,.1);border-radius:12px;padding:6px 10px;display:flex;flex-direction:column;align-items:center}
 .drawers small{color:var(--brand-muted);font-size:.8rem}
 .drawers b{font-size:1.15rem;font-weight:700}
@@ -152,7 +162,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .stock.out{background:var(--gave-soft);color:var(--gave)}
 .devpick{box-shadow:none;border:1px solid var(--line)}
 .item.sale .mid b{white-space:normal}
-.mini3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:6px 0}
+.mini3{display:grid;grid-template-columns:repeat(var(--n,3),minmax(0,1fr));gap:6px;margin:6px 0}
 .mini3 span{background:var(--sunk);border-radius:12px;padding:6px 4px;text-align:center;min-width:0}
 .mini3 small{display:block;font-size:.75rem;color:var(--muted)}
 .mini3 i{font-style:normal;font-weight:700;font-size:1.05rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -167,7 +177,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .qty button:disabled{opacity:.35}
 .qty b{font-size:1.6rem;min-width:2ch;text-align:center}
 .saletot{text-align:center;background:var(--sunk);border-radius:14px;padding:10px}
-.paygrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.paygrid{display:grid;grid-template-columns:repeat(var(--n,3),minmax(0,1fr));gap:8px}
 .paygrid button{border:2px solid var(--line);background:var(--surface);border-radius:14px;min-height:60px;font-weight:700;font-size:.95rem;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.25;padding:6px 4px}
 .paygrid button small{font-weight:500;font-size:.75rem;color:var(--muted)}
 .paygrid .p-cashier.on{border-color:var(--cs);background:var(--cs-soft);color:var(--cs)}
@@ -278,6 +288,39 @@ details summary::-webkit-details-marker{display:none}
 .tbtn{border:0;background:var(--bg);color:var(--ink);border-radius:999px;padding:4px 12px;margin-inline-start:8px;font-weight:700}
 .sheet .sh{padding-block:14px 12px}
 .sheet .sb{gap:12px}
+/* drawer settings */
+.drow{display:flex;align-items:flex-end;gap:12px}
+.drow .field{flex:1;min-width:0}
+.dfix{font-size:.8rem;color:var(--muted);padding-bottom:12px;white-space:nowrap}
+.switch{display:flex;flex-direction:column;align-items:center;gap:2px;padding-bottom:6px;cursor:pointer;position:relative}
+.switch input{position:absolute;opacity:0;width:1px;height:1px;min-height:0}
+.switch span{width:46px;height:28px;border-radius:999px;background:var(--line);position:relative;transition:background .2s}
+.switch span::after{content:"";position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.3,1.4,.5,1)}
+.switch input:checked+span{background:var(--took)}
+.switch input:checked+span::after{transform:translateX(-18px)}
+.switch input:focus-visible+span{outline:3px solid var(--accent);outline-offset:2px}
+.switch small{font-size:.72rem;color:var(--muted)}
+/* theme picker */
+.thbtn{padding:0 10px}
+.themes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.th{border:2px solid var(--line);background:var(--surface);border-radius:18px;padding:10px 8px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink);font-weight:700;transition:border-color .2s, transform .15s}
+.th.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent)}
+.th small{color:var(--muted);font-weight:500;font-size:.78rem}
+.thl{display:inline-flex;align-items:center;gap:5px} .thl svg{width:17px;height:17px}
+.prev{width:100%;aspect-ratio:3/4;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:0 0 6px;border:1px solid rgba(127,127,127,.25)}
+.prev i{height:34%;display:block}
+.prev b{height:16%;margin:0 7px;border-radius:5px;display:block}
+.p-light{background:#f1f3f7} .p-light i{background:linear-gradient(160deg,#1f4f8f,#14325e)} .p-light b{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.p-dark{background:#0e1218} .p-dark i{background:linear-gradient(160deg,#1c3d68,#122640)} .p-dark b{background:#171d27}
+.p-auto{background:linear-gradient(135deg,#f1f3f7 50%,#0e1218 50%)} .p-auto i{background:linear-gradient(160deg,#1f4f8f,#122640)} .p-auto b{background:linear-gradient(135deg,#fff 50%,#171d27 50%)}
+/* sliding pill behind the current tab */
+.nav .in{position:relative}
+.navpill{position:absolute;top:7px;right:0;width:20%;height:32px;display:flex;justify-content:center;pointer-events:none;transform:translateX(calc(var(--to) * -100%))}
+.navpill::before{content:"";width:58px;border-radius:999px;background:color-mix(in srgb, var(--accent) 16%, transparent)}
+.nav button{z-index:1}
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){z-index:2}
+
 /* ---------- motion: short, smooth, no bounce on content ---------- */
 .act,.btn,.kp button,.pad button,.ubtn,.pick > span,.dayrow{position:relative;overflow:hidden}
 .ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.16;transform:scale(0);pointer-events:none;animation:ripple .5s ease-out forwards}
@@ -306,7 +349,42 @@ details summary::-webkit-details-marker{display:none}
   .dots.shake{animation:shake .4s}
   .toast{animation:toastIn .28s cubic-bezier(.2,.8,.2,1) both}
   .day.open .list{animation:fadeUp .25s ease-out both}
+  /* tabs slide in from the side you came from */
+  .wrap.enter.tab-next > *{animation:fromLeft .34s cubic-bezier(.2,.8,.2,1) both}
+  .wrap.enter.tab-prev > *{animation:fromRight .34s cubic-bezier(.2,.8,.2,1) both}
+  .navpill.move{animation:pillMove .42s cubic-bezier(.3,1.25,.5,1) both}
+  .nav button.on svg{animation:iconPop .4s cubic-bezier(.3,1.5,.5,1)}
+  /* sheets: soft spring up, slide down when closing */
+  .overlay .sheet{animation:sheetUp .38s cubic-bezier(.2,1.05,.3,1) both}
+  .overlay.out{animation:fadeOut .22s ease-in forwards;pointer-events:none}
+  .overlay.out .sheet{animation:sheetDown .22s ease-in forwards}
+  /* balances glow when they change */
+  .flash-up{animation:flashUp .9s ease-out}
+  .flash-down{animation:flashDown .9s ease-out}
+  /* a new row lights up for a moment */
+  .item.pop{animation:slideIn .35s cubic-bezier(.2,.8,.2,1) both, rowFlash 1.6s ease-out}
+  /* login */
+  .login .logo i{animation:logoIn .7s cubic-bezier(.3,1.4,.5,1) both}
+  .login .in.enter .ubtn{animation:scaleIn .4s cubic-bezier(.2,.8,.2,1) both}
+  .ugrid .ubtn:nth-child(2){animation-delay:.05s} .ugrid .ubtn:nth-child(3){animation-delay:.1s} .ugrid .ubtn:nth-child(n+4){animation-delay:.15s}
+  .paygrid button.on,.seg button.on,.th.on{animation:tap .22s ease-out}
+  .act .ic{transition:transform .2s cubic-bezier(.3,1.5,.5,1)}
+  .act:active .ic{transform:scale(.86) rotate(-8deg)}
+  .thbtn svg{transition:transform .4s cubic-bezier(.3,1.5,.5,1)} .thbtn:active svg{transform:rotate(40deg) scale(.9)}
+  .th:active{transform:scale(.96)}
+  .stock.out{animation:softPulse 2.4s ease-in-out infinite}
 }
+@keyframes fromLeft{from{transform:translateX(-28px);opacity:0}}
+@keyframes fromRight{from{transform:translateX(28px);opacity:0}}
+@keyframes pillMove{from{transform:translateX(calc(var(--from) * -100%))}}
+@keyframes iconPop{40%{transform:translateY(-3px) scale(1.15)}}
+@keyframes fadeOut{to{opacity:0}}
+@keyframes sheetDown{to{transform:translateY(60px);opacity:0}}
+@keyframes flashUp{25%{transform:scale(1.07);text-shadow:0 0 22px rgba(60,198,131,.85)}}
+@keyframes flashDown{25%{transform:scale(1.07);text-shadow:0 0 22px rgba(255,123,112,.85)}}
+@keyframes rowFlash{0%,30%{background:color-mix(in srgb, var(--accent) 14%, transparent)}}
+@keyframes logoIn{from{transform:scale(.4) rotate(-20deg);opacity:0}}
+@keyframes softPulse{50%{opacity:.6}}
 @keyframes ripple{to{transform:scale(1);opacity:0}}
 @keyframes confetti{0%{transform:translate(-50%,0) rotate(0);opacity:1}100%{transform:translate(calc(-50% + var(--x)),var(--y)) rotate(var(--r));opacity:0}}
 @keyframes fadeIn{from{opacity:0}}
@@ -323,7 +401,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="config.js?v=20"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

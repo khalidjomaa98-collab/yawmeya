@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 19; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 20; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -48,8 +48,31 @@ const icon = {
   set:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   dev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>'
 };
+icon.auto = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>';
+icon.light = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>';
+icon.dark = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>';
+
+// Day / night look: 'auto' follows the phone, 'light' and 'dark' are fixed. Saved on this phone only.
+const THEMES = {auto:['تلقائي', 'زي الموبايل'], light:['نهاري', 'فاتح'], dark:['ليلي', 'غامق']};
+const themePref = () => { const t = lsGet('yawmeya-theme'); return THEMES[t] ? t : 'auto'; };
+const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(t){
+  const r = document.documentElement;
+  if (t === 'auto') r.removeAttribute('data-theme'); else r.dataset.theme = t;
+  lsSet('yawmeya-theme', t);
+  const dark = t === 'dark' || (t === 'auto' && darkMQ.matches);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#122640' : '#14325e');
+}
+const themeBtn = () => `<button class="ibtn thbtn" data-a="themeSheet" aria-label="شكل البرنامج: ${THEMES[themePref()][0]}">${icon[themePref()]}</button>`;
+const TAB_ORDER = ['kenash', 'dev', 'txs', 'notes', 'set'];
+
 // Where the money from a device sale went.
+// Hesham can rename them and hide the accessory drawer / H Cash from الإعدادات.
 const PAY = {cashier:'درج الكاشير', acc:'درج الإكسسوار', hcash:'اتش كاش'};
+const DRAWER_ON = {cashier:true, acc:true, hcash:true};
+const dn = k => esc(PAY[k]);
+const onKeys = () => Object.keys(PAY).filter(k => DRAWER_ON[k]);
+function setDrawers(rows){ (rows || []).forEach(r => { if (r.key in PAY){ PAY[r.key] = r.name; DRAWER_ON[r.key] = r.key === 'cashier' || !!r.active; } }); }
 
 /* ---------- state ---------- */
 let S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
@@ -91,7 +114,7 @@ async function refresh(){
   if (DEMO) return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
-  const [shops, users, parties, txs, notes, days, devices, sales] = await Promise.all([
+  const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
     sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
     sb.from('parties').select('id,name,phone').order('name'),
@@ -99,8 +122,10 @@ async function refresh(){
     admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
     admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null),
     sb.from('devices').select('*').eq('archived', false).order('name'),
-    sb.from('device_sales').select('*').gte('ts', from + 'T00:00:00Z').order('ts', {ascending:false}).limit(3000)
+    sb.from('device_sales').select('*').gte('ts', from + 'T00:00:00Z').order('ts', {ascending:false}).limit(3000),
+    sb.from('drawers').select('*').order('sort')
   ]);
+  setDrawers(must(drawers));
   S.devices = must(devices).map(mapDev);
   const pendS = S.sales.filter(s => s.pending);
   S.sales = must(sales).map(mapSale);
@@ -133,7 +158,7 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'drawers']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
@@ -141,6 +166,7 @@ function onChange(table, p){
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
   else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
   else if (table === 'devices'){ if (del || row.archived) S.devices = S.devices.filter(d => d.id !== (row?.id || old.id)); else upsert(S.devices, mapDev(row)); }
+  else if (table === 'drawers'){ if (!del) setDrawers([row]); }
   else if (table === 'device_sales'){ if (del) S.sales = S.sales.filter(s => s.id !== old.id); else upsert(S.sales, mapSale(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && me?.role === 'admin'){
@@ -205,6 +231,7 @@ function errText(e){
   if (m === 'forbidden') return 'الحركة دي لهشام بس.';
   if (m.includes('NO_STOCK')) return 'الكمية دي مش موجودة في المخزن.';
   if (m.includes('VOUCHER')) return 'اكتب رقم البون.';
+  if (m.includes('BAD_PAY')) return 'الدرج ده اتقفل. اختار درج تاني.';
   if (m.includes('NO_DEVICE')) return 'الجهاز ده اتشال من المخزن.';
   if (m === 'unknown_action') return 'البرنامج محتاج يتحدّث. اقفله وافتحه تاني.';
   if (/fetch|network|Failed/i.test(m) || !navigator.onLine) return 'مفيش نت. اتأكد من الاتصال وجرّب تاني.';
@@ -230,6 +257,7 @@ function band(inner, tall){
     <header class="band${tall ? ' tall' : ''}"><div class="in gut">
       <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
+        ${themeBtn()}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
       ${inner}
     </div></header>
@@ -282,7 +310,8 @@ function saleItem(x, o = {}){
 // Txs and sales of one list, newest first.
 const mixed = (txs, sales, o) => [...txs.map(x => ({ts:x.ts, h:() => item(x, o)})), ...sales.map(x => ({ts:x.ts, h:() => saleItem(x, o)}))].sort((a, b) => b.ts - a.ts).map(r => r.h()).join('');
 const drawersLine = d => { const acc = accOf(d), h = d ? saleTot(daySales(d)).hcash : 0;
-  return `<div class="drawers"><span><small>درج الإكسسوار</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span><span><small>اتش كاش (قسط)</small><b class="num">${nf(h)}</b></span></div>`; };
+  const parts = [DRAWER_ON.acc && `<span><small>${dn('acc')}</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span>`, DRAWER_ON.hcash && `<span><small>${dn('hcash')}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
+  return parts.length ? `<div class="drawers" style="--n:${parts.length}">${parts.join('')}</div>` : ''; };
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
 /* ---------- screens ---------- */
@@ -302,7 +331,7 @@ function renderSetup(){
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
-    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية<span style="flex:1"></span>${themeBtn()}</div>
       <h1>مين بيسجل دلوقتي؟</h1>
       ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : 'كاشير'}</small></button>`).join('')}</div>`
         : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
@@ -325,7 +354,7 @@ function renderCashier(){
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cash = cashOf(od);
-  return `${band(`<div class="cash"><small>درج الكاشير</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
+  return `${band(`<div class="cash"><small>${dn('cashier')}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
@@ -352,7 +381,7 @@ function renderAdmin(){
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, dev:tabDev, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
   return `${band(top)}<main class="wrap admin gut">${body}</main>
-    <nav class="nav" aria-label="الأقسام"><div class="in">${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
+    <nav class="nav" aria-label="الأقسام"><div class="in"><span class="navpill${ui.navFrom != null ? ' move' : ''}" style="--to:${TAB_ORDER.indexOf(ui.tab)};--from:${ui.navFrom ?? TAB_ORDER.indexOf(ui.tab)}" aria-hidden="true"></span>${tabs.map(([k, l, n]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon[k]}${l}${n ? `<span class="badge">${n}</span>` : ''}</button>`).join('')}</div></nav>`;
 }
 // Shops whose day is still open: closing one clears the cashier's screen and starts a fresh day.
 // Each shop: its drawer right now, the start balance the owner typed, and closing the day.
@@ -366,7 +395,7 @@ function openDaysCard(){
     const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = saleTot(daySales(d));
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b>
-        <div class="mini3"><span><small>الكاشير</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span><span><small>الإكسسوار</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span><span><small>اتش كاش</small><i class="num">${nf(st.hcash)}</i></span></div>
+        <div class="mini3" style="--n:${onKeys().length}"><span><small>${dn('cashier')}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${DRAWER_ON.acc ? `<span><small>${dn('acc')}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${DRAWER_ON.hcash ? `<span><small>${dn('hcash')}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
         <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small>
         ${st.count ? `<small>${st.count} جهاز اتباع · مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
         <div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
@@ -413,7 +442,7 @@ function tabTxs(){
             <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}</small></span>
           <span class="dtot">${d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
-        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b> · كاشير <span class="num">${nf(st.cashier)}</span> · إكسسوار <span class="num">${nf(st.acc)}</span> · اتش كاش <span class="num">${nf(st.hcash)}</span>${d.accOpening != null ? ` · درج الإكسسوار <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
+        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${Object.keys(PAY).filter(k => DRAWER_ON[k] || st[k]).map(k => ` · ${dn(k)} <span class="num">${nf(st[k])}</span>`).join('')}${d.accOpening != null && DRAWER_ON.acc ? ` · رصيد ${dn('acc')} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
           + (list.length + sl.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
             ...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
@@ -428,6 +457,11 @@ function tabNotes(){
 }
 function tabSet(){
   return `<section><h2>المحلات</h2><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></section>
+    <section><h2>الأدراج</h2><form id="drawersf" class="card">
+      <p class="muted small">غيّر أسامي الأدراج زي ما تحب. الدرج اللي تقفله هيختفي من عند الكاشير ومن البيع، والمبيعات القديمة بتفضل زي ما هي.</p>
+      ${Object.keys(PAY).map(k => `<div class="drow"><div class="field"><label for="dr_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${k}" name="${k}" value="${dn(k)}" maxlength="40" autocomplete="off"></div>
+        ${k === 'cashier' ? '<span class="dfix">دايمًا شغال</span>' : `<label class="switch"><input type="checkbox" name="on_${k}" ${DRAWER_ON[k] ? 'checked' : ''}><span></span><small>شغال</small></label>`}</div>`).join('')}
+      <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></section>
     <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
         ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
@@ -468,6 +502,13 @@ function sheet(head, body, cls = ''){
 }
 function renderModal(){
   const m = ui.modal; if (!m) return '';
+  if (m.kind === 'theme'){
+    const cur = themePref();
+    return sheet(`<h2>شكل البرنامج</h2>`, `<div class="themes" role="radiogroup">${Object.entries(THEMES).map(([k, [l, sub]]) =>
+      `<button type="button" role="radio" aria-checked="${cur === k}" class="th ${cur === k ? 'on' : ''}" data-a="setTheme" data-v="${k}">
+        <span class="prev p-${k}" aria-hidden="true"><i></i><b></b><b></b></span><span class="thl">${icon[k]}${l}</span><small>${sub}</small></button>`).join('')}</div>
+      <p class="muted small" style="text-align:center">الاختيار بيتحفظ على الموبايل ده بس.</p>`);
+  }
   if (m.kind === 'tx'){
     const T = TYPES[m.type];
     return sheet(`<h2 class="sht"><span class="ic-s">${icon[m.type]}</span>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
@@ -520,8 +561,8 @@ function renderModal(){
       <div class="qty"><span>الكمية</span><button type="button" data-a="qty" data-v="-1" aria-label="أقل" ${m.qty <= 1 ? 'disabled' : ''}>−</button><b class="num">${m.qty}</b><button type="button" data-a="qty" data-v="1" aria-label="أكتر" ${m.qty >= d.qty ? 'disabled' : ''}>+</button></div>
       <div class="saletot" id="stot">${sellTot(m, d)}</div>
       <p class="pinlbl">الفلوس راحت فين؟</p>
-      <div class="paygrid" role="radiogroup">${Object.entries(PAY).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
-      ${m.pay === 'hcash' ? `<div class="field"><label for="sv">رقم البون</label><input id="sv" inputmode="numeric" autocomplete="off" value="${esc(m.voucher || '')}" placeholder="اكتب رقم بون اتش كاش"></div>` : ''}
+      <div class="paygrid" role="radiogroup" style="--n:${onKeys().length}">${onKeys().map(k => [k, esc(PAY[k])]).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
+      ${m.pay === 'hcash' ? `<div class="field"><label for="sv">رقم البون</label><input id="sv" inputmode="numeric" autocomplete="off" value="${esc(m.voucher || '')}" placeholder="اكتب رقم البون"></div>` : ''}
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn primary wide" data-a="saveSale">سجّل البيع</button>`, 'sell');
   }
@@ -541,19 +582,19 @@ function renderModal(){
     const x = S.sales.find(s => s.id === m.id); if (!x){ ui.modal = null; return ''; }
     return sheet(`<h2>تمسح البيعة دي؟</h2>`, `
       <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${saleItem(x, {})}</ul>
-      <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${PAY[x.pay]}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
+      <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${dn(x.pay)}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
       <button class="btn danger wide" data-a="delSaleOk">امسح</button>`);
   }
   if (m.kind === 'opening'){
     const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId, m.drawer);
     return sheet(`<h2>رصيد بداية ${esc(sh.name)}</h2>`, `
-      <div class="seg" role="tablist">${[['cashier', 'درج الكاشير'], ['acc', 'درج الإكسسوار']].map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>
+      ${DRAWER_ON.acc ? '' : '<!--'}<div class="seg" role="tablist">${[['cashier', PAY.cashier], ['acc', PAY.acc]].map(([k, l]) => [k, esc(l)]).map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>${DRAWER_ON.acc ? '' : '-->'}
       <p class="muted small" style="text-align:center">${od ? 'الفلوس اللي في الدرج لما اليوم بدأ.' : 'هيبدأ يوم جديد بالرصيد ده.'} ${m.drawer === 'acc' ? 'بيزيد مع الأجهزة اللي فلوسها راحت درج الإكسسوار.' : 'بيزيد مع أخدت وبيع الأجهزة، ويقل مع أعطيت.'}</p>
       ${last != null ? `<button class="btn sm" data-a="useLast" style="align-self:center">آخر يوم قفل على ${nf(last)}، استخدمه</button>` : ''}
       <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}">${k}</button>`).join('')}</div>
       <p id="ferr" class="err" role="alert"></p>
-      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد ${m.drawer === 'acc' ? 'درج الإكسسوار' : 'درج الكاشير'}</button>`);
+      <button class="btn primary wide" data-a="saveOpening">احفظ رصيد ${dn(m.drawer)}</button>`);
   }
   if (m.kind === 'closeDay'){
     const sh = shop(m.shopId), od = openDay(m.shopId); if (!sh || !od){ ui.modal = null; return ''; }
@@ -561,8 +602,8 @@ function renderModal(){
     return sheet(`<h2>قفل يوم ${esc(sh.name)}</h2>`, `
       <div class="lockhero"><span class="lockic">${icon.lock}</span>
         <p>الحركات هتختفي من عند الكاشير ويبدأ يوم جديد. هتفضل عندك في السجل وفي قسم كناش.</p></div>
-      ${od.opening != null ? `<div class="kpis3"><div><small>بداية الكاشير</small><b class="num">${nf(od.opening)}</b></div><div><small>درج الكاشير دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div><div><small>درج الإكسسوار</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div></div>` : ''}
-      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div><div><small>اتش كاش</small><b class="num">${nf(st.hcash)}</b></div></div>` : ''}
+      ${od.opening != null ? `<div class="kpis3"><div><small>بداية ${dn('cashier')}</small><b class="num">${nf(od.opening)}</b></div><div><small>${dn('cashier')} دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div>${DRAWER_ON.acc ? `<div><small>${dn('acc')}</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div>` : ''}</div>` : ''}
+      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div>${DRAWER_ON.hcash ? `<div><small>${dn('hcash')}</small><b class="num">${nf(st.hcash)}</b></div>` : ''}</div>` : ''}
       <div class="kpis3"><div><small>حركة</small><b class="num">${r.count}</b></div>
         <div><small>أخدت</small><b class="num took-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num gave-t">${nf(r.gave)}</b></div></div>
       <p class="muted small" style="text-align:center">من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)} لحد دلوقتي${waiting ? ` · ${waiting} لسه ما اتنقلوش لكناش` : ''}</p>
@@ -629,14 +670,24 @@ function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
   const view = ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
-  const hadModal = !!app.querySelector('.overlay');
+  const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
+  const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
   let h = ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
-  h += me ? renderModal() : '';
+  h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
   // whole screen slides in when you move to a different screen
   const entering = view !== lastView; lastView = view;
   if (entering) app.querySelectorAll('.band, .wrap, .login .in').forEach(el => el.classList.add('enter'));
+  // switching tabs slides the page in from the side of the tab you came from
+  if (entering && prevTab >= 0){ const now = TAB_ORDER.indexOf(ui.tab); app.querySelector('.wrap')?.classList.add(now > prevTab ? 'tab-next' : 'tab-prev'); }
+  ui.navFrom = null;
+  // a closing sheet slides down instead of vanishing
+  if (oldOv && !ui.modal && !calm()){
+    oldOv.classList.add('out'); oldOv.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+    oldOv.querySelectorAll('[data-a]').forEach(e => e.removeAttribute('data-a'));
+    app.appendChild(oldOv); setTimeout(() => oldOv.remove(), 240);
+  }
   // list rows: stagger on a new screen, otherwise only rows that just arrived
   let i = 0;
   app.querySelectorAll('.item[data-id]').forEach(el => {
@@ -648,7 +699,7 @@ function render(){
   app.querySelectorAll('[data-count]').forEach(el => {
     const k = el.dataset.count, to = Number(el.dataset.val), from = counts[k] ?? (entering ? 0 : to);
     counts[k] = to;
-    if (from !== to) countUp(el, from, to);
+    if (from !== to){ countUp(el, from, to); if (!entering && !calm()) el.classList.add(to > from ? 'flash-up' : 'flash-down'); }
   });
   const ov = app.querySelector('.overlay');
   if (ov && hadModal) ov.classList.add('still');
@@ -735,7 +786,22 @@ const A = {
   del(v){ ui.modal = {kind:'del', id:v}; },
   restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
     op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
+  themeSheet(){ ui.modal = {kind:'theme'}; },
+  setTheme(v, e){
+    ui.modal = null;
+    const go = () => { applyTheme(v); render(); };
+    if (v === themePref() || !document.startViewTransition || calm()){ go(); return false; }
+    // the new look spreads out in a circle from where you tapped
+    const x = e?.clientX || innerWidth / 2, y = e?.clientY || 60, rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    try {
+      document.startViewTransition(go).ready.then(() => document.documentElement.animate(
+        {clipPath:[`circle(0px at ${x}px ${y}px)`, `circle(${rad}px at ${x}px ${y}px)`]},
+        {duration:620, easing:'cubic-bezier(.4,0,.2,1)', pseudoElement:'::view-transition-new(root)'})).catch(() => {});
+    } catch(_){ go(); }
+    return false;
+  },
   tab(v){
+    if (v !== ui.tab) ui.navFrom = TAB_ORDER.indexOf(ui.tab);
     ui.tab = v; window.scrollTo(0, 0);
     if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
   },
@@ -781,7 +847,7 @@ const A = {
     op(() => {
       if (od) od[key] = amount;
       else S.days.push({id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:null, accOpening:null, [key]:amount});
-      ui.modal = null; toast(`رصيد ${PAY[m.drawer]} ${nf(amount)} ✓`);
+      ui.modal = null; toast(`رصيد ${PAY[m.drawer]}: ${nf(amount)} ✓`);
     }, async () => { must(await sb.rpc('set_opening_balance', {p_shop:sid, p_amount:amount, p_drawer:m.drawer})); await refresh(); }, 'ما اتحفظش.');
     return false;
   },
@@ -934,6 +1000,14 @@ const F = {
       op(() => { S.devices.push({id, shopId, name, buy, sell, qty, archived:false}); ui.modal = null; toast(`${name} اتضاف للمخزن (${qty})`); },
         async () => must(await sb.from('devices').insert({id, ...row})), 'ما اتضافش.'); }
   },
+  drawersf(fd){
+    const rows = Object.keys(PAY).map(k => ({key:k, name:String(fd.get(k) || '').trim().replace(/\s+/g, ' '), active:k === 'cashier' || fd.get('on_' + k) === 'on'}));
+    if (rows.some(r => !r.name)) return formErr('كل درج لازم يكون ليه اسم.', 'derr');
+    const before = rows.map(r => ({key:r.key, name:PAY[r.key], active:DRAWER_ON[r.key]}));
+    op(() => { setDrawers(rows); toast('الأدراج اتحفظت'); },
+       async () => { for (const r of rows) must(await sb.from('drawers').update({name:r.name, active:r.active}).eq('key', r.key)); }, 'ما اتحفظتش.')
+      .then(ok => { if (!ok){ setDrawers(before); render(); } });
+  },
   shopsf(fd){
     const changes = S.shops.map(s => [s, String(fd.get(s.id) || '').trim()]).filter(([s, n]) => n && n !== s.name);
     op(() => { changes.forEach(([s, n]) => s.name = n); toast('الأسامي اتحفظت'); },
@@ -1026,6 +1100,8 @@ setInterval(checkUpdate, 3 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 document.addEventListener('click', () => { if (ui.reloadPending && !ui.modal) location.reload(); }, true);
 
+applyTheme(themePref());
+darkMQ.addEventListener?.('change', () => { if (themePref() === 'auto') applyTheme('auto'); });
 (async function boot(){
   checkUpdate();
   if (DEMO){ demoData(DEMO); ui.booting = false; render(); return; }
