@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>اليومية</title>
 <meta name="theme-color" content="#14325e">
 <script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
@@ -231,7 +231,7 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 .err{color:var(--gave);font-size:.92rem;min-height:1.3em}
 
 /* sheet */
-.overlay{position:fixed;inset:0;background:var(--scrim);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.overlay{position:fixed;inset:var(--vv-top,0px) 0 auto 0;height:100vh;height:var(--app-h,100dvh);background:var(--scrim);z-index:30;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--surface);width:100%;max-width:560px;max-height:94%;overflow:auto;border-radius:24px 24px 0 0;display:flex;flex-direction:column}
 .sheet .sh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px max(18px,env(safe-area-inset-right,0px)) 14px max(18px,env(safe-area-inset-left,0px))}
 .sheet .sh.took{background:var(--took);color:#fff} .sheet .sh.gave{background:var(--gave);color:#fff}
@@ -252,7 +252,7 @@ input[type=password]{direction:ltr;text-align:center;letter-spacing:.4em}
 
 .nav{position:relative;flex-shrink:0;z-index:20;background:var(--surface);box-shadow:0 -1px 0 var(--line);padding-bottom:env(safe-area-inset-bottom,0px);touch-action:manipulation}
 /* while typing, the keyboard would push the bar up over the field: hide it until typing is done */
-body.typing .nav{display:none}
+body.typing .nav,body.kb .nav{display:none}
 .nav .in{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 .nav button{border:0;background:none;padding:10px 2px;font-size:.82rem;font-weight:600;color:var(--muted);position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:62px}
 .nav button svg{width:24px;height:24px}
@@ -406,7 +406,7 @@ details summary::-webkit-details-marker{display:none}
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="config.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

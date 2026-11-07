@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 22; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 23; // bump with version.json on every release so open apps refresh themselves
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -1116,9 +1116,26 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 document.addEventListener('click', () => { if (ui.reloadPending && !ui.modal) location.reload(); }, true);
 
 // Size the owner screen to the part of the phone screen that is really visible (some Android WebViews report a taller one).
-const setAppH = () => document.documentElement.style.setProperty('--app-h', Math.round(window.visualViewport?.height || innerHeight) + 'px');
-setAppH(); window.visualViewport?.addEventListener('resize', setAppH); window.addEventListener('resize', setAppH);
+// The keyboard is spotted by the visible area getting much shorter (works even where focus events don't arrive):
+// the bottom bar hides, sheets shrink to sit above the keyboard, and the field being typed in is scrolled into view.
+let fullH = 0, lastW = 0, kbOn = false;
+function setAppH(){
+  const vv = window.visualViewport, h = Math.round(vv?.height || innerHeight), w = Math.round(vv?.width || innerWidth), r = document.documentElement.style;
+  if (w !== lastW){ lastW = w; fullH = 0; }  // turned the phone: start over
+  if (!kbOn) fullH = Math.max(fullH, h);
+  const kb = fullH - h > 140;
+  r.setProperty('--app-h', h + 'px');
+  r.setProperty('--vv-top', Math.round(vv?.offsetTop || 0) + 'px');
+  document.body.classList.toggle('kb', kb);
+  if (kb && !kbOn){ const a = document.activeElement; if (isField(a)) setTimeout(() => a.scrollIntoView({block:'center', behavior:'smooth'}), 80); }
+  kbOn = kb;
+}
+setAppH();
+window.visualViewport?.addEventListener('resize', setAppH); window.visualViewport?.addEventListener('scroll', setAppH);
+window.addEventListener('resize', setAppH);
 window.addEventListener('orientationchange', () => setTimeout(setAppH, 300));
+// a field tapped while the keyboard is already open also comes into view
+document.addEventListener('focusin', e => { if (kbOn && isField(e.target)) setTimeout(() => e.target.scrollIntoView({block:'center', behavior:'smooth'}), 80); });
 applyTheme(themePref());
 darkMQ.addEventListener?.('change', () => { if (themePref() === 'auto') applyTheme('auto'); });
 (async function boot(){
