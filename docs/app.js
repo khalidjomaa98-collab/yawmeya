@@ -1,6 +1,9 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 23; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 24; // bump with version.json on every release so open apps refresh themselves
+const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
+const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
+const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
 const DEMO = new URLSearchParams(location.search).get('demo'); // 'cashier' | 'admin' shows sample data, saves nothing
 const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, autoRefreshToken:!DEMO, storageKey:'yawmeya-auth'}});
 
@@ -333,6 +336,18 @@ function renderSetup(){
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>اعمل الحساب وادخل</button></form></div></main>`;
 }
+function renderRecovery(){
+  const reset = ui.recovery === 'reset';
+  const title = reset ? 'رقم سري جديد لهشام' : 'نسيت الرقم السري';
+  const intro = reset ? 'اكتب 6 أرقام جديدة وأكدها. الحركات والحسابات هتفضل محفوظة.' : 'اكتب إيميل الاستعادة المسجل لحساب هشام. هنرسل عليه رابط لتعيين رقم جديد.';
+  return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+    <h1>${title}</h1><p class="muted">${intro}</p>
+    ${ui.recovery === 'sent' ? '<div class="card"><p role="status">لو الإيميل مسجل، هتوصلك رسالة فيها رابط الاستعادة. راجع البريد المزعج كمان. افتح الرابط في المتصفح على نفس الموبايل أو الكمبيوتر.</p><p class="muted small">لو الرابط انتهت صلاحيته، اطلب رسالة جديدة.</p></div>' : `<form id="${reset ? 'recoverfinishf' : 'recoverrequestf'}" class="card">
+      ${reset ? '<div class="field"><label for="rp1">الرقم الجديد</label><input id="rp1" name="pin" type="password" inputmode="numeric" pattern="[0-9٠-٩]{6}" maxlength="6" autocomplete="new-password" required></div><div class="field"><label for="rp2">اكتبه تاني</label><input id="rp2" name="pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" required></div>' : '<div class="field"><label for="recoveremail">إيميل هشام</label><input id="recoveremail" name="email" type="email" dir="ltr" autocomplete="email" required></div>'}
+      <p id="ferr" class="err" role="alert"></p><button class="btn primary wide" ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'لحظة...' : reset ? 'احفظ الرقم الجديد' : 'ابعت رابط الاستعادة'}</button></form>`}
+    ${ui.recoveryError ? `<p class="err" role="alert">${esc(ui.recoveryError)}</p>` : ''}
+    <button class="back" data-a="recoveryBack">→ رجوع للدخول</button></div></main>`;
+}
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
@@ -348,6 +363,7 @@ function renderLogin(){
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px">${avatar(u.name)}<h1>${esc(u.name)}</h1><p class="muted">اكتب الرقم السري</p></div>
     <div class="dots ${ui.pinErr ? 'bad' : ''}" aria-label="${ui.pin.length} من ${len}">${Array.from({length:len}, (_, i) => `<span class="${i < ui.pin.length ? 'f' : ''}"></span>`).join('')}</div>
     <p class="err" role="alert">${ui.pinBusy ? 'بيدخل...' : esc(ui.pinErr)}</p>
+    ${u.role === 'admin' ? '<button class="back" style="align-self:center;text-decoration:underline" data-a="forgotPin">نسيت الرقم السري؟</button>' : ''}
     <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n => `<button data-a="pin" data-v="${n}" ${ui.pinBusy ? 'disabled' : ''}>${n}</button>`).join('')}
       <button data-a="pinBack" aria-label="امسح رقم">⌫</button><button data-a="pin" data-v="0" ${ui.pinBusy ? 'disabled' : ''}>0</button><span></span></div></div></main>`;
 }
@@ -675,12 +691,12 @@ const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.
 function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
-  const view = ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
+  const view = ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
   const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
   // the owner screen scrolls inside #scroller: keep its place across redraws (a tab change sets ui.scrollTop = 0)
   const oldSc = document.getElementById('scroller'), keepTop = ui.scrollTop ?? (oldSc ? oldSc.scrollTop : 0); ui.scrollTop = null;
   const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
-  let h = ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
+  let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
@@ -752,6 +768,11 @@ async function doLogin(userId, pin){
 }
 const nowIso = () => new Date().toISOString();
 const A = {
+  forgotPin(){ ui.pinUser = null; ui.pin = ''; ui.recovery = 'request'; ui.recoveryError = ''; },
+  recoveryBack(){
+    ui.recovery = null; ui.recoveryError = ''; ui.pinUser = null;
+    if (RECOVERY_ENTRY){ location.replace(location.origin + location.pathname); return false; }
+  },
   noop(){ return false; },
   closeModal(){ ui.modal = null; },
   install(){ const e = ui.installEvt; ui.installEvt = null; if (e) e.prompt(); },
@@ -926,6 +947,42 @@ const A = {
 };
 
 const F = {
+  async recoverrequestf(fd){
+    if (ui.busy) return;
+    const email = String(fd.get('email') || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return formErr('اكتب إيميل صحيح.');
+    ui.busy = true;
+    const button = document.querySelector('#recoverrequestf button'); if(button){button.disabled=true;button.textContent='لحظة...';}
+    try {
+      if (!DEMO && email === RECOVERY_EMAIL){
+        const r = await sb.auth.resetPasswordForEmail(email, {redirectTo:RECOVERY_URL}); must(r);
+      }
+      ui.recovery = 'sent'; ui.recoveryError = '';
+    } catch(e){
+      ui.recoveryError = /rate|429|too many/i.test(e.message || '') ? 'اتطلبت رسايل كتير. استنى شوية وجرّب تاني.' : 'ما قدرناش نبعت الرسالة. جرّب بعد شوية.';
+    } finally { ui.busy = false; render(); }
+  },
+  async recoverfinishf(fd){
+    if (ui.busy) return;
+    const pin = latin(fd.get('pin')).trim(), pin2 = latin(fd.get('pin2')).trim();
+    if (!/^[0-9]{6}$/.test(pin)) return formErr('الرقم الجديد لازم يكون 6 أرقام.');
+    if (pin !== pin2) return formErr('الرقمين مش زي بعض.');
+    ui.busy = true;
+    document.querySelectorAll('#recoverfinishf button').forEach(b=>b.disabled=true);
+    try {
+      if (!DEMO) {
+        must(await sb.rpc('finish_pin_recovery', {p_pin:pin}));
+        await sb.auth.signOut();
+      }
+      // Remove the recovery URL and any in-memory PIN; go back to normal PIN sign-in.
+      me = null; ui.pin = ''; ui.pinUser = null; ui.recovery = null; ui.recoveryError = '';
+      history.replaceState(null, '', location.pathname);
+      if (!DEMO) await loadLogin();
+      toast('الرقم الجديد اتحفظ. ادخل بيه دلوقتي.');
+    } catch(e){
+      ui.recoveryError = 'الرابط غير صالح أو انتهت صلاحيته. اطلب رابط جديد من نسيت الرقم السري.';
+    } finally { ui.busy = false; render(); }
+  },
   async setupf(fd){
     const name = String(fd.get('name') || '').trim(), pin = latin(fd.get('pin')).trim(), pin2 = latin(fd.get('pin2')).trim();
     if (!name) return formErr('اكتب الاسم.');
@@ -1060,7 +1117,7 @@ document.addEventListener('input', e => {
 document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn) fn(new FormData(e.target)); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ui.modal){ ui.modal = null; render(); }
-  if (!me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
+  if (!ui.recovery && !me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
 });
 document.addEventListener('focusout', () => setTimeout(() => { if (ui.dirty && !ui.modal) softRender(); }, 50));
 // The bottom bar stays put: hide it while the keyboard is open so it doesn't ride up over the field being typed in.
@@ -1105,7 +1162,7 @@ function demoData(role){
 
 // An app left open keeps old code; reload it when a newer version is published (never in the middle of a form).
 async function checkUpdate(){
-  if (DEMO) return;
+  if (DEMO || ui.recovery) return;
   try {
     const v = (await (await fetch('version.json?t=' + Date.now(), {cache:'no-store'})).json()).v;
     if (v > APP_VERSION){ if (ui.modal || ui.pinBusy) ui.reloadPending = true; else location.reload(); }
@@ -1138,12 +1195,26 @@ window.addEventListener('orientationchange', () => setTimeout(setAppH, 300));
 document.addEventListener('focusin', e => { if (kbOn && isField(e.target)) setTimeout(() => e.target.scrollIntoView({block:'center', behavior:'smooth'}), 80); });
 applyTheme(themePref());
 darkMQ.addEventListener?.('change', () => { if (themePref() === 'auto') applyTheme('auto'); });
+// Recovery is handled before normal session loading; URL alone never authorizes a PIN reset.
+sb.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY'){
+    ui.recovery = 'reset'; ui.booting = false;
+    history.replaceState(null, '', location.pathname + '?recover=1');
+    setTimeout(render, 0);
+  }
+});
 (async function boot(){
   checkUpdate();
   if (DEMO){ demoData(DEMO); ui.booting = false; render(); return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
     const {data:{session}} = await sb.auth.getSession();
+    if (RECOVERY_ENTRY || ui.recovery === 'reset'){
+      ui.recovery = session ? 'reset' : 'request';
+      if (!session) ui.recoveryError = 'الرابط غير صالح أو انتهت صلاحيته. اطلب رسالة جديدة.';
+      history.replaceState(null, '', location.pathname + '?recover=1');
+      ui.booting = false; render(); return;
+    }
     if (session) await loadMe(session.user.id);
     if (!me) await loadLogin();
   } catch(e){ ui.offline = !navigator.onLine; }
