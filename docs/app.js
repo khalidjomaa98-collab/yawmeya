@@ -150,7 +150,7 @@ async function refresh(){
   if(me?.id!==refreshActor)return;
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
-  if(me?.id===refreshActor&&me.role==='admin'&&ui.f.from)await loadHistoryRange(ui.f);
+  if(me?.id===refreshActor&&me.role==='admin'&&ui.tab==='txs'&&ui.f.from)await loadHistoryRange(ui.f);
 }
 async function fetchDay(d, rerender = true){
   if (DEMO) return;const actor=me?.id;
@@ -871,7 +871,7 @@ const A = {
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
-    initialLoadGeneration++;ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
+    initialLoadGeneration++;extraDays.clear();ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
@@ -916,6 +916,7 @@ const A = {
   tab(v){
     if (v !== ui.tab) ui.navFrom = TAB_ORDER.indexOf(ui.tab);
     ui.tab = v; ui.scrollTop = 0;
+    if(v==='txs'&&ui.f.from&&!DEMO)void loadHistoryRange(ui.f).then(softRender).catch(()=>{toast('تعذر تحميل الفترة المطلوبة. جرّب البحث تاني.');render();});
     if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
   },
   kshop(v){ ui.kshop = v; },
