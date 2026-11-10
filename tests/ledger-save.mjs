@@ -13,4 +13,15 @@ assert.equal(local,1);assert.equal(remote,0,'second write is blocked while first
 release();assert.equal(await pending,true);assert.equal(ctx.ui.saveState,'saved');
 assert.equal(await ctx.op(()=>{},async()=>{throw Error('network');}),false);
 assert.equal(ctx.ui.saveState,'uncertain');assert.equal(ctx.ui.saving,false);
-console.log('PASS: ledger save status and duplicate-submit guard');
+ctx.S={txs:[],sales:[],days:[]};
+ctx.refresh=async()=>{
+  assert.equal(ctx.S.txs.length,0,'failed temporary insert must be removed before fetching confirmed data');
+  assert.equal(ctx.S.days.length,0,'temporary empty shop day must be removed');
+  ctx.S.txs=[{id:'lost-response',pending:false}];
+};
+await ctx.op(()=>{ctx.S.txs.push({id:'lost-response',dayId:'local-test',pending:true});ctx.S.days.push({id:'local-test'});},async()=>{throw Error('network');});
+assert.equal(ctx.S.txs.length,1);assert.equal(ctx.S.txs[0].pending,false,'a committed row recovered after a lost response is confirmed once');
+ctx.refresh=async()=>{};
+await ctx.op(()=>{throw Error('local failure');},async()=>{});
+assert.equal(ctx.ui.saving,false,'local rendering failures must release the save lock');
+console.log('PASS: duplicate-submit guard, failed optimistic cleanup, lost response reconciliation, local-error recovery');

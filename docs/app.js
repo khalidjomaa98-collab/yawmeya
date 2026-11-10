@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 30; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 31; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -255,15 +255,29 @@ function errText(e){
 
 // Change the screen right away, save in the background, and undo with a message if saving fails.
 async function op(local, remote, failMsg){
-  if(ui.saving){toast('استنى تأكيد الحفظ الأول');render();return false;}
-  ui.saving=true;ui.saveState='saving';local();render();
-  if (DEMO){ui.saving=false;ui.saveState='saved';render();return true;}
-  try { await remote();ui.saving=false;ui.saveState='saved';const badge=document.querySelector('.save-indicator');if(badge){badge.className='save-indicator saved';badge.textContent='✓ اتحفظ على السيرفر';}softRender();return true; }
-  catch(e){
+  if(ui.saving){toast('استنى تأكيد الحفظ الأول');return false;}
+  const beforeTx=new Set(typeof S==='undefined'?[]:S.txs.map(x=>x.id));
+  const beforeSales=new Set(typeof S==='undefined'?[]:S.sales.map(x=>x.id));
+  ui.saving=true;ui.saveState='saving';
+  try {
+    local();render();
+    if(DEMO){ui.saving=false;ui.saveState='saved';render();return true;}
+    await remote();ui.saving=false;ui.saveState='saved';
+    const badge=document.querySelector('.save-indicator');if(badge){badge.className='save-indicator saved';badge.textContent='✓ اتحفظ على السيرفر';}
+    softRender();return true;
+  } catch(e){
+    // Do not carry failed optimistic inserts into refresh() as pending forever.
+    // If the response was lost after a commit, refresh reads the confirmed row.
+    if(typeof S!=='undefined'){
+      S.txs=S.txs.filter(x=>!x.pending||beforeTx.has(x.id));
+      S.sales=S.sales.filter(x=>!x.pending||beforeSales.has(x.id));
+      S.days=S.days.filter(x=>!String(x.id).startsWith('local-')||S.txs.some(t=>t.dayId===x.id)||S.sales.some(t=>t.dayId===x.id));
+    }
     ui.saving=false;ui.saveState='uncertain';
-    toast(failMsg ? `${failMsg} ${errText(e)}` : errText(e));
-    try { await refresh(); } catch(_){}
-    render(); return false;
+    const uncertain=!e?.code||/fetch|network|timeout|abort/i.test(String(e?.message||''));
+    toast(uncertain?'الحفظ لم يتأكد. راجع السجل قبل تكرار الحركة.':(failMsg?failMsg+' ':'')+errText(e));
+    try {await refresh();}catch(_){}
+    render();return false;
   }
 }
 
