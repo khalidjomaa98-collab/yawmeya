@@ -90,4 +90,21 @@ function setup(role='staff'){
  await t.api.handleAction('hr_confirm_payroll','draft');
  assert.equal(t.calls[0].p_action,'approve_payroll');assert.equal(t.calls[0].p_data.expected_snapshot.missing_rates,false,'approval carries the reviewed snapshot');
 }
-console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent updates, explicit payroll review');
+{
+ const t=setup();t.data.payrolls=[{id:'approved',employee_id:'employee-1',status:'approved',net:300,period_start:'2001-01-01',period_end:'2001-01-02',adjustments:[]},{id:'draft',employee_id:'employee-1',status:'draft',net:999999,period_start:'2001-01-03',period_end:'2001-01-04',adjustments:[]}];
+ t.data.payments=[{id:'payment',payroll_id:'approved',amount:100}];await t.api.load();
+ assert.match(t.api.renderStaff(),/200.00/,'balance uses approved payroll minus confirmed payments');
+ assert.doesNotMatch(t.api.renderStaff(),/id="hr_logs"|999999/,'current shift keeps logs and drafts out of the main screen');
+ await t.api.handleAction('hr_staff_tab','hours');assert.match(t.api.renderStaff(),/id="hr_logs"/);assert.doesNotMatch(t.api.renderStaff(),/ورديتك دلوقتي/);
+ await t.api.handleAction('hr_staff_tab','pay');assert.match(t.api.renderStaff(),/999999/,'draft remains accessible in payroll details');
+ assert.doesNotMatch(t.api.renderStaff(),/شوف تفاصيل مستحقاتك/,'no self-navigation on the pay screen');
+ await t.api.handleAction('hr_staff_tab','today');assert.match(t.api.renderStaff(),/ورديتك دلوقتي/);assert.equal(t.calls.length,0,'presentation navigation never writes attendance or payroll');
+}
+{
+ const t=setup('admin');t.data.shifts=[{id:'long',employee_id:'other',start_at:new Date(Date.now()-13*3600000).toISOString(),end_at:null}];
+ t.data.requests=[{id:'request',employee_id:'other',shift_id:'long',status:'pending'}];await t.api.load();
+ assert.match(t.api.renderAdmin(),/محتاج مراجعتك/);assert.match(t.api.renderAdmin(),/1 طلب تعديل · 1 وردية/);
+ await t.api.handleAction('hr_tab','team');assert.match(t.api.renderAdmin(),/الموظفين وأسعار الساعة/);
+ await t.api.handleAction('hr_tab','requests');assert.match(t.api.renderAdmin(),/طلبات تعديل الانصراف/);assert.equal(t.calls.length,0);
+}
+console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent updates, payroll review, screen navigation, approved balances, manager attention');

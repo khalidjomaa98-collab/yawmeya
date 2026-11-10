@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 37; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 38; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
