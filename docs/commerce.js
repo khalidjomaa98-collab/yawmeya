@@ -10,6 +10,7 @@ window.HCashCommerce=(()=>{
   const [r,p,c]=await Promise.all([pages('hcash_returns_page'),sb.from('hcash_staff_preferences').select('*'),sb.rpc('hcash_can_cost')]);
   if(me?.id!==actor)return;returns=must(r).map(mapReturn);prefs=must(p);me.view_cost=must(c);
  }
+ function applySnapshot(data){returns=data.returns.map(mapReturn);prefs=data.preferences;me.view_cost=data.view_cost===true;}
  const dayReturns=d=>d?returns.filter(r=>r.dayId===d.id):[];
  const saleReturns=id=>returns.filter(r=>r.saleId===id);
  const remaining=s=>Math.max(0,s.qty-saleReturns(s.id).reduce((n,r)=>n+r.qty,0));
@@ -65,9 +66,9 @@ window.HCashCommerce=(()=>{
   F.cancelsalef=fd=>{const id=ui.modal.id,reason=String(fd.get('reason')||'').trim();if(reason.length<3)return formErr('اكتب سبب الإلغاء.');if(DEMO){toast('دي تجربة؛ مفيش بيعة اتلغت.');render();return;}void act(async()=>must(await sb.rpc('hcash_cancel_sale',{p_id:id,p_reason:reason})),{done:()=>{ui.modal=null;toast('اتلغى تسجيل البيع والجهاز رجع المخزن.');}});};
  }
  const costButton=u=>u.role==='cashier'?`<button class="btn sm" data-a="toggleCost" data-v="${u.id}">التكلفة: ${prefs.find(p=>p.user_id===u.id)?.view_cost?'ظاهرة':'مخفية'}</button>`:'';
- function signal(){if(!me||me.role==='staff')return;clearTimeout(signalTimer);signalTimer=setTimeout(()=>(me?.role==='admin'?load():refresh()).then(softRender).catch(()=>{}),350);}
+ function signal(){if(!me||me.role==='staff')return;clearTimeout(signalTimer);signalTimer=setTimeout(()=>refresh().then(softRender).catch(()=>{}),350);}
  document.addEventListener('input',event=>{if(ui.modal?.kind!=='return'||event.target.form?.id!=='returnf')return;const m=ui.modal,s=S.sales.find(x=>x.id===m.id);if(event.target.name==='amount')m.refundCustom=true;if(event.target.name==='qty'&&!m.refundCustom&&s){const amount=event.target.form.elements.namedItem('amount');if(amount)amount.value=String(Math.round(Number(event.target.value)*s.price*100)/100);}});
  function quickActions(){return `<details class="ledger-fold light owner-shortcuts"><summary>تسجيل سريع</summary><div class="quick-actions"><button class="btn" data-a="type" data-v="took">أخدت</button><button class="btn" data-a="type" data-v="gave">أعطيت</button><button class="btn" data-a="sell">بيع جهاز</button><button class="btn" data-a="hrOpen">الحضور</button></div></details>`;}
- return {quickActions,load,pages,canCost,dayReturns,dayNet,net,returnItem,returnList,modal,pricePolicy,install,costButton,remaining,signal,get returns(){return returns;},reset(){returns=[];prefs=[];clearTimeout(signalTimer);}};
+ return {applySnapshot,quickActions,load,pages,canCost,dayReturns,dayNet,net,returnItem,returnList,modal,pricePolicy,install,costButton,remaining,signal,get returns(){return returns;},reset(){returns=[];prefs=[];clearTimeout(signalTimer);}};
 })();
 

@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 35; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 36; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -125,21 +125,14 @@ async function refresh(){
   if (DEMO) return;
   const refreshActor=me?.id;if(!refreshActor)return;
   if (me?.role === 'staff'){ await Attendance.load({silent:true}); return; }
-  await HCashCommerce.load();if(me?.id!==refreshActor)return;
-  const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
-  const txq = ()=>sb.from('txs').select('*').order('ts',{ascending:false}).order('id');
-  const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
-    sb.from('shops').select('*').order('sort'),
-    readPages(()=>sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at').order('id')),
-    readPages(()=>sb.from('parties').select('id,name,phone').order('name').order('id')),
-    readPages(()=>admin ? txq().or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq()),
-    admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
-    readPages(()=>admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at',{ascending:false}).order('id') : sb.from('shop_days').select('*').is('closed_at',null).order('id')),
-    HCashCommerce.pages('hcash_catalog_page'),
-    HCashCommerce.pages('hcash_sales_page'),
-    sb.from('shop_drawers').select('*')
-  ]);
+  // HR is independent of the ledger. Its completion updates the widget silently.
+  void Attendance.load({silent:true}).then(()=>{if(me?.id===refreshActor)softRender();}).catch(()=>{});
+  const snapshot=must(await sb.rpc('hcash_ledger_snapshot'));
   if(me?.id!==refreshActor)return;
+  const keys=['shops','users','parties','txs','notes','days','devices','sales','drawers','returns','preferences'];
+  if(!snapshot||keys.some(k=>!Array.isArray(snapshot[k])))throw Error('Invalid ledger snapshot');
+  HCashCommerce.applySnapshot(snapshot);
+  const [shops,users,parties,txs,notes,days,devices,sales,drawers]=['shops','users','parties','txs','notes','days','devices','sales','drawers'].map(k=>({data:snapshot[k]}));
   setDrawers(must(drawers));
   S.devices = must(devices).map(mapDev);
   const pendS = S.sales.filter(s => s.pending);
@@ -157,7 +150,6 @@ async function refresh(){
   if(me?.id!==refreshActor)return;
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
-  await Attendance.load({silent:true});
   if(me?.id===refreshActor&&me.role==='admin'&&ui.f.from)await loadHistoryRange(ui.f);
 }
 async function fetchDay(d, rerender = true){
@@ -228,11 +220,24 @@ async function loadLogin(){
   const [u, n] = await Promise.all([sb.rpc('login_users'), sb.rpc('needs_setup')]);
   ui.loginUsers = u.data || []; ui.needsSetup = !!n.data;
 }
-async function loadMe(uid){
-  const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data;ui.approvingSale=false;ui.saving=false;ui.saveState='';try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
-  else { me = null; await sb.auth.signOut(); }
+let initialLoadGeneration=0;
+async function hydrateInitialData(){
+  const actor=me?.id;if(!actor)return;
+  const generation=++initialLoadGeneration;ui.initialLoading=true;ui.initialPending=true;ui.initialError='';
+  try{await refresh();if(me?.id===actor&&generation===initialLoadGeneration){ui.initialLoading=false;ui.initialPending=false;render();}}
+  catch(_){if(me?.id===actor&&generation===initialLoadGeneration){ui.initialPending=false;ui.initialError='تعذر تحميل بياناتك. راجع الاتصال وجرّب تاني.';render();}}
 }
+async function loadMe(uid,profile=null){
+  const r=profile?.id===uid?{data:profile}:await sb.from('profiles').select('*').eq('id',uid).maybeSingle();
+  if(r.error)throw r.error;
+  if(r.data?.active&&['admin','cashier','staff'].includes(r.data.role)){
+    me=r.data;ui.approvingSale=false;ui.saving=false;ui.saveState='';
+    try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){}
+    if(me.role!=='admin')ui.shopId=me.shop_id;
+    subscribe();void registerPush();void hydrateInitialData();
+  }else{me=null;await sb.auth.signOut();throw Error('forbidden');}
+}
+
 async function fnCall(body){
   if (DEMO) return {};
   const {data, error} = await sb.functions.invoke('auth', {body});
@@ -359,6 +364,8 @@ const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? HCashCommerce.da
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
 /* ---------- screens ---------- */
+function renderLoadingData(){return `${band('')}<main class="wrap gut initial-data" aria-busy="${!!ui.initialPending}"><div class="card"><h1>${ui.initialError?'البيانات مش جاهزة':'جاري تجهيز حسابك'}</h1><p class="muted" role="status">${ui.initialError||'اتأكد الدخول. بنحمّل بيانات الشغل…'}</p>${ui.initialError?'<button class="btn primary" data-a="retryData">إعادة تحميل البيانات</button>':'<div class="data-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>'}</div></main>`;}
+
 const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted">بيحمّل...</p></div></main>`;
 
 function renderSetup(){
@@ -745,12 +752,12 @@ const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.
 function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
-  const view = me && (ui.hr || me.role === 'staff') ? 'attendance:' + me.role : ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
+  const view = me&&ui.initialLoading?'initial:'+me.role:me && (ui.hr || me.role === 'staff') ? 'attendance:' + me.role : ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
   const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
   // the owner screen scrolls inside #scroller: keep its place across redraws (a tab change sets ui.scrollTop = 0)
   const oldSc = document.getElementById('scroller'), keepTop = ui.scrollTop ?? (oldSc ? oldSc.scrollTop : 0); ui.scrollTop = null;
   const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
-  let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
+  let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : ui.initialLoading ? renderLoadingData() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   const settingsOpen=view===lastView?[...app.querySelectorAll('.settings-section[open],.ledger-fold[open]')].map(d=>d.dataset.keep||d.querySelector('summary')?.textContent):[];
@@ -826,8 +833,8 @@ async function doLogin(userId, pin){
   ui.pinBusy = true; render();
   try {
     const tokens = await fnCall({action:'login', user_id:userId, pin});
-    const s = must(await sb.auth.setSession(tokens));
-    await loadMe(s.user.id);
+    const s = must(await sb.auth.setSession({access_token:tokens.access_token,refresh_token:tokens.refresh_token}));
+    await loadMe(s.user.id,tokens.profile);
     ui.pinUser = null; ui.pin = ''; ui.pinErr = ''; ui.tab = 'kenash';
   } catch(e){ ui.pin = ''; ui.pinErr = errText(e); }
   ui.pinBusy = false; render();
@@ -835,6 +842,7 @@ async function doLogin(userId, pin){
 }
 const nowIso = () => new Date().toISOString();
 const A = {
+  retryData(){if(!ui.initialPending)void hydrateInitialData();return false;},
   clearHistory(){ui.f={shop:'all'};ui.historyLimit=false;lsSet('history-filters:'+me.id,JSON.stringify(ui.f));},
   auditOpen(){ui.hr=true;Attendance.openAudit();return false;},
   attendanceAlert(v){ui.hr=true;Attendance.openAlert(null,v);return false;},
@@ -863,7 +871,7 @@ const A = {
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
-    HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
+    initialLoadGeneration++;ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },

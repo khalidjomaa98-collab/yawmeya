@@ -25,3 +25,5 @@
 .owner-shortcuts{background:var(--surface);padding:0 14px;margin-top:0}.quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding-top:8px}.owner-shortcuts summary{font-weight:600;color:var(--ink)}
 
 .device-sale-price{font-weight:700;font-size:1.18rem;color:var(--ink);margin-top:4px}.device-sale-price .cur{font-size:.75rem;font-weight:400;color:var(--muted)}
+
+.initial-data{width:100%;max-width:680px}.initial-data h1{font-size:1.2rem}.data-skeleton{display:flex;flex-direction:column;gap:12px;margin-top:16px}.data-skeleton i{height:22px;display:block;border-radius:8px;background:var(--sunk)}.data-skeleton i:nth-child(2){width:70%}.data-skeleton i:nth-child(3){height:76px}@media(prefers-reduced-motion:no-preference){.data-skeleton{animation:softPulse 1.2s ease-in-out infinite}}

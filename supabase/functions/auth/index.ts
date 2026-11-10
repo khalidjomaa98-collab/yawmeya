@@ -67,7 +67,10 @@ Deno.serve(async (req) => {
       if (r.error) return json({ error: "server" }, 500);
       if (r.data === "LOCKED") return json({ error: "locked" }, 429);
       if (!r.data) return json({ error: "wrong" }, 401);
-      return json(await session(userId, r.data as string));
+      const [tokens,profile]=await Promise.all([session(userId,r.data as string),admin.from('profiles').select('id,name,role,active,created_at,shop_id').eq('id',userId).maybeSingle()]);
+      if(profile.error)return json({error:'server'},500);
+      if(!profile.data?.active)return json({error:'forbidden'},403);
+      return json({...tokens,profile:profile.data});
     }
 
     if (action === "setup") {

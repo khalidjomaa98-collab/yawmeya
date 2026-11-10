@@ -14,6 +14,11 @@ begin
  if exists(select 1 from public.devices where id=did) then raise exception 'Cost visible through direct table';end if;
  r:=public.hcash_catalog_page(0,500);
  if r->0 ? 'buy_price' then raise exception 'Cost leaked in catalog';end if;
+ r:=public.hcash_ledger_snapshot();
+ if (r->'devices'->0 ? 'buy_price') or jsonb_array_length(r->'notes')<>0 or jsonb_array_length(r->'preferences')<>1 then raise exception 'Startup snapshot privacy failed';end if;
+ if exists(select 1 from jsonb_array_elements(r->'devices') x where (x->>'shop_id')::uuid<>sid) then raise exception 'Cross-shop startup device leak';end if;
+ if r ? 'payrolls' or r ? 'auth' or has_function_privilege('anon','public.hcash_ledger_snapshot()','execute') then raise exception 'Startup snapshot access expanded';end if;
+
  begin perform public.hcash_post_sale(sale,did,2,130,'cashier',null);exception when sqlstate '42501' then blocked:=true;end;
  if not blocked then raise exception 'Minimum price bypassed';end if;
  execute 'reset role';
