@@ -42,3 +42,19 @@ do $test$ declare owner_id uuid; worker_id uuid; sid uuid; party_id uuid; tid uu
 end $test$;
 rollback;
 select 'PASS: atomic retries, payload conflicts, no recreation after wipe, single stock decrement, disjoint audit pages, backup reconstruction snapshot-safe wipe and privileged API denial. All fixtures rolled back.' as result;
+
+-- Attendance-only accounts cannot use financial RPCs.
+begin;
+do $test$ declare uid uuid:=gen_random_uuid(); sid uuid; pid uuid; denied boolean:=false; begin
+ select id into sid from public.shops limit 1;select id into pid from public.parties limit 1;
+ insert into auth.users(id) values(uid);
+ insert into public.profiles(id,name,role) values(uid,'HCASH_TEST_STAFF','staff');
+ perform set_config('request.jwt.claim.sub',uid::text,true);
+ begin perform public.hcash_post_tx(gen_random_uuid(),sid,pid,null,'took',1,'HCASH_ROLE_TEST');exception when sqlstate '42501' then denied:=true;end;
+ if not denied then raise exception 'Attendance-only transaction accepted';end if;
+ denied:=false;
+ begin perform public.hcash_post_sale(gen_random_uuid(),gen_random_uuid(),1,1,'cashier',null);exception when sqlstate '42501' then denied:=true;end;
+ if not denied then raise exception 'Attendance-only sale accepted';end if;
+end $test$;
+rollback;
+select 'PASS attendance-only role denied; all fixtures rolled back' as result;
