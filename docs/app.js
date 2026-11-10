@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 28; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 29; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -114,7 +114,7 @@ const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at
 const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:Number(r.buy_price), sell:Number(r.sell_price), qty:r.qty, archived:!!r.archived});
 const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
   buy:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
-const mapNote = n => ({id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
+const mapNote = n => ({shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
 
@@ -151,6 +151,7 @@ async function refresh(){
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
   await Attendance.load({silent:true});
+  if(me.role==='admin'&&ui.f.from)await loadHistoryRange(ui.f);
 }
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
@@ -209,7 +210,7 @@ async function registerPush(){
     if (perm.receive !== 'granted') return;
     if (!pushListenersReady){
       await P.addListener('registration', t => { pushToken = t.value; if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
-      await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if (e.notification?.data?.module === 'attendance' || me.role === 'staff') ui.hr = true; else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
+      await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if (e.notification?.data?.module === 'attendance' || e.notification?.data?.kind === 'attendance' || me.role === 'staff'){ui.hr=true;Attendance.openAlert(e.notification?.data?.alert_id,e.notification?.data?.shift_id);}  else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
       pushListenersReady = true;
     }
     await P.register();
@@ -221,7 +222,7 @@ async function loadLogin(){
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data; if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
+  if (r.data && r.data.active){ me = r.data;try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
   else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
@@ -254,10 +255,12 @@ function errText(e){
 
 // Change the screen right away, save in the background, and undo with a message if saving fails.
 async function op(local, remote, failMsg){
-  local(); render();
-  if (DEMO) return true;
-  try { await remote(); return true; }
+  if(ui.saving){toast('استنى تأكيد الحفظ الأول');render();return false;}
+  ui.saving=true;ui.saveState='saving';local();render();
+  if (DEMO){ui.saving=false;ui.saveState='saved';render();return true;}
+  try { await remote();ui.saving=false;ui.saveState='saved';const badge=document.querySelector('.save-indicator');if(badge){badge.className='save-indicator saved';badge.textContent='✓ اتحفظ على السيرفر';}softRender();return true; }
   catch(e){
+    ui.saving=false;ui.saveState='uncertain';
     toast(failMsg ? `${failMsg} ${errText(e)}` : errText(e));
     try { await refresh(); } catch(_){}
     render(); return false;
@@ -459,31 +462,43 @@ function tabDev(){
     ${st.count ? `<section><h2>مبيعات النهارده</h2><div class="kpis3 card"><div><small>اتباع</small><b class="num">${st.count}</b></div><div><small>بفلوس</small><b class="num">${nf(st.total)}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div></div></section>` : ''}
     ${recent.length ? `<section><h2>آخر المبيعات</h2><ul class="list">${recent.map(x => saleItem(x, {date:true, shop:ui.dshop === 'all', who:true})).join('')}</ul></section>` : ''}`;
 }
+async function loadHistoryRange(f){
+  if(DEMO||!f?.from||!f?.to)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(f.from)||!/^\d{4}-\d{2}-\d{2}$/.test(f.to)||f.from>f.to||(Date.parse(f.to)-Date.parse(f.from))/86400000>90)return;
+  async function pages(query){const all=[];for(let offset=0;offset<10000;offset+=1000){const batch=must(await query().order('id').range(offset,offset+999));all.push(...batch);if(batch.length<1000)break;}return all;}
+  const [rawTx,rawSales]=await Promise.all([pages(()=>sb.from('txs').select('*').gte('day',f.from).lte('day',f.to)),pages(()=>sb.from('device_sales').select('*').gte('ts',addDays(f.from,-1)+'T00:00:00Z').lt('ts',addDays(f.to,2)+'T00:00:00Z'))]);
+  const txs=rawTx.map(mapTx),sales=rawSales.map(mapSale);ui.historyLimit=txs.length>=10000||sales.length>=10000;txs.forEach(x=>upsert(S.txs,x));sales.forEach(x=>upsert(S.sales,x));const ids=[...new Set([...txs,...sales].map(x=>x.dayId).filter(Boolean))];
+  for(let i=0;i<ids.length;i+=100)must(await sb.from('shop_days').select('*').in('id',ids.slice(i,i+100))).map(mapDay).forEach(x=>upsert(S.days,x));
+}
 function tabTxs(){
   const f = ui.f;
+  const matches=(x,sale=false)=> (!f.from||dayOf(x.ts)>=f.from)&&(!f.to||dayOf(x.ts)<=f.to)&&(!f.employee||x.userId===f.employee)&&(!f.type||(sale?f.type==='sale':f.type===x.type))&&(!f.q||norm([sale?x.name:party(x.partyId)?.name,x.note,x.voucher,user(x.userId)?.name].join(' ')).includes(norm(f.q)));
   const days = S.days.filter(d => f.shop === 'all' || d.shopId === f.shop).sort((a, b) => (a.closedAt ? 1 : 0) - (b.closedAt ? 1 : 0) || b.openedAt - a.openedAt);
-  return `${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
-    ${days.length ? days.map(d => {
-      const list = dayTxs(d), r = totals(list), sl = S.sales.filter(s => s.dayId === d.id), st = saleTot(sl), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
+  const filtering=!!(f.q||f.type||f.employee||f.from||f.to);
+  const visibleDays=days.filter(d=>!filtering||dayTxs(d).some(x=>matches(x))||S.sales.some(x=>x.dayId===d.id&&matches(x,true)));
+  return `<form id="historyf" class="card history-filters"><h2>بحث في السجل</h2><label class="field">اسم / ملاحظة / رقم بون<input name="q" type="search" value="${esc(f.q||'')}"></label><div class="row2"><label class="field">من<input name="from" type="date" value="${esc(f.from||'')}"></label><label class="field">لحد<input name="to" type="date" value="${esc(f.to||'')}"></label></div><label class="field">الموظف<select name="employee"><option value="">الكل</option>${S.users.filter(u=>u.role!=='staff').map(u=>`<option value="${u.id}" ${f.employee===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label><label class="field">نوع الحركة<select name="type">${[['','الكل'],['took','أخدت'],['gave','أعطيت'],['sale','بيع جهاز']].map(([k,n])=>`<option value="${k}" ${f.type===k?'selected':''}>${n}</option>`).join('')}</select></label><small class="muted">من غير فترة: البحث في الأيام المحملة. اختار فترة لعرض سجل أقدم (حتى ٩٠ يوم).</small><button class="btn primary">اعرض النتائج</button><button type="button" class="btn" data-a="clearHistory">مسح الفلاتر</button></form>${ui.historyLimit?'<p class="err">النتائج كتير؛ ضيّق الفترة عشان تظهر كاملة.</p>':''}${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
+    ${visibleDays.length ? visibleDays.map(d => {
+      const list = dayTxs(d).filter(x=>matches(x)), r = totals(list), sl = S.sales.filter(s => s.dayId === d.id&&matches(s,true)), st = saleTot(sl), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
+      if((f.q||f.type||f.employee||f.from||f.to)&&!list.length&&!sl.length)return '';
       const o = {who:true, admin:true};
       return `<section class="day ${open ? 'open' : ''}">
         <button class="dayrow" data-a="toggleDay" data-v="${d.id}" aria-expanded="${open}">
           <span class="dname"><b>${dayLabel(dayOf(d.openedAt))}${f.shop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</b>
             <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}</small></span>
-          <span class="dtot">${d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
+          <span class="dtot">${!filtering&&d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
-        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${DRAWER_KEYS.filter(k => isOn(d.shopId, k) || st[k]).map(k => ` · ${dn(k, d.shopId)} <span class="num">${nf(st[k])}</span>`).join('')}${d.accOpening != null && isOn(d.shopId, 'acc') ? ` · رصيد ${dn('acc', d.shopId)} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
+        ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${DRAWER_KEYS.filter(k => isOn(d.shopId, k) || st[k]).map(k => ` · ${dn(k, d.shopId)} <span class="num">${nf(st[k])}</span>`).join('')}${!filtering&&d.accOpening != null && isOn(d.shopId, 'acc') ? ` · رصيد ${dn('acc', d.shopId)} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
           + (list.length + sl.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
             ...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
           : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn dark" data-a="closeDay" data-v="${d.shopId}">قفل اليوم ده</button>`) : ''}</section>`;
-    }).join('') : `<p class="empty">لسه مفيش أيام.</p>`}
+    }).join('') : `<p class="empty">مفيش حركات مطابقة للاختيارات.</p>`}
     <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
 }
 function tabNotes(){
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
   return `${perm === 'default' ? `<div class="card"><p>فعّل الإشعارات علشان توصلك والبرنامج في الخلفية.</p><button class="btn primary" data-a="askNotify">فعّل الإشعارات</button></div>` : ''}
-    ${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b><small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
+    <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
   return `<div class="release-card"><div><b>اليومية</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
@@ -711,7 +726,9 @@ function render(){
   const hrSame=view===lastView&&view.startsWith('attendance:');
   const hrTop=hrSame?window.scrollY:0;
   const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
+  if(me)h+=`<div class="save-indicator ${ui.saveState||''}" role="status">${ui.offline?'غير متصل · اتأكد من النت قبل التسجيل':ui.saveState==='saving'?'جاري الحفظ…':ui.saveState==='saved'?(DEMO?'تمت التجربة · بدون حفظ':'✓ اتحفظ على السيرفر'):ui.saveState==='uncertain'?'لم يتم تأكيد الحفظ · حدّث وراجع السجل قبل تكرار الحركة':''}</div>`;
   app.innerHTML = h;
+  Attendance.decorateDates();
   Attendance.restoreForms();
   app.querySelectorAll('.settings-section').forEach(d=>{if(settingsOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});
   if(hrSame){app.querySelectorAll('.att-root details').forEach(d=>{if(hrOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});window.scrollTo(0,hrTop);}
@@ -755,16 +772,18 @@ function render(){
 function formErr(msg, id = 'ferr'){ const e = document.getElementById(id); if (e) e.textContent = msg; }
 // For account changes that must be confirmed by the server before showing them.
 async function act(fn, opts = {}){
+  if(ui.busy||ui.saving)return;
+  ui.saveState='saving';const status=document.querySelector('.save-indicator');if(status)status.textContent='جاري الحفظ…';
   if (ui.busy) return;
   ui.busy = true;
   const btns = [...document.querySelectorAll('form button')]; btns.forEach(b => b.disabled = true);
   try {
-    await fn(); ui.busy = false;
+    await fn(); ui.busy = false;ui.saveState='saved';
     if (me) await refresh().catch(() => {});
     if (opts.done) opts.done();
     render();
   } catch(e){
-    ui.busy = false; btns.forEach(b => b.disabled = false);
+    ui.busy = false;ui.saveState='uncertain'; btns.forEach(b => b.disabled = false);
     if (document.getElementById(opts.errId || 'ferr')) formErr(errText(e), opts.errId); else { toast(errText(e)); render(); }
   }
 }
@@ -783,6 +802,9 @@ async function doLogin(userId, pin){
 }
 const nowIso = () => new Date().toISOString();
 const A = {
+  clearHistory(){ui.f={shop:'all'};ui.historyLimit=false;lsSet('history-filters:'+me.id,JSON.stringify(ui.f));},
+  auditOpen(){ui.hr=true;Attendance.openAudit();return false;},
+  attendanceAlert(v){ui.hr=true;Attendance.openAlert(null,v);return false;},
   applyUpdate(){ location.reload(); return false; },
   hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load({silent:true}).then(render).catch(() => {}); },
   hrBack(){ ui.hr = false; ui.modal = null; },
@@ -856,7 +878,7 @@ const A = {
     if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
   },
   kshop(v){ ui.kshop = v; },
-  fshop(v){ ui.f.shop = v; },
+  fshop(v){ ui.f.shop = v;lsSet('history-filters:'+me.id,JSON.stringify(ui.f)); },
   toggleDay(v){ const d = S.days.find(x => x.id === v), wasOpen = ui.openDays.has(v) || (d && !d.closedAt && !ui.openDays.has('x' + v));
     ui.openDays.delete(v); ui.openDays.delete('x' + v); if (!wasOpen) ui.openDays.add(v); else if (d && !d.closedAt) ui.openDays.add('x' + v); },
   send(v){ ui.modal = {kind:'send', id:v}; },
@@ -967,6 +989,11 @@ const A = {
 };
 
 const F = {
+  async historyf(fd){
+    const f={...ui.f,q:String(fd.get('q')||'').trim(),employee:String(fd.get('employee')||''),type:String(fd.get('type')||''),from:String(fd.get('from')||''),to:String(fd.get('to')||'')};
+    if((f.from||f.to)&&(!/^\d{4}-\d{2}-\d{2}$/.test(f.from)||!/^\d{4}-\d{2}-\d{2}$/.test(f.to)||f.from>f.to||(Date.parse(f.to)-Date.parse(f.from))/86400000>90)){toast('اختار بداية ونهاية صحيحة، بحد أقصى ٩٠ يوم');render();return;}
+    try{await loadHistoryRange(f);ui.f=f;lsSet('history-filters:'+me.id,JSON.stringify(f));S.days.forEach(d=>ui.openDays.add(d.id));render();}catch(e){toast(errText(e));render();}
+  },
   async recoverrequestf(fd){
     if (ui.busy) return;
     const email = String(fd.get('email') || '').trim().toLowerCase();
@@ -1134,7 +1161,7 @@ document.addEventListener('input', e => {
   else if (e.target.id === 'dq' && ui.modal?.kind === 'sell'){ ui.modal.q = e.target.value; document.getElementById('dlist').innerHTML = devOptions(ui.modal.shopId, e.target.value); }
   else if (e.target.id === 'sv' && ui.modal?.kind === 'sell') ui.modal.voucher = latin(e.target.value);
 });
-document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn) fn(new FormData(e.target)); });
+document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn&&!ui.saving&&!ui.busy) fn(new FormData(e.target)); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ui.modal){ ui.modal = null; render(); }
   if (!ui.recovery && !me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }

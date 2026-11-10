@@ -11,6 +11,7 @@ function setup(role='staff'){
   let uncertain=false;
   const context={console,Intl,Date,URLSearchParams,FormData,crypto:webcrypto,navigator:{onLine:true},me:{id,name:'موظف',role},DEMO:false,ui:{},render(){},setInterval(){return 1;},clearInterval(){},document:{addEventListener(){},querySelectorAll(){return [];}},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},window:{location:{search:''}},sb:{async rpc(name,args){
     if(name==='hr_snapshot')return {data:structuredClone(data),error:null};
+    if(name==='hr_preview_payroll')return {data:structuredClone(data.payrolls.find(p=>p.id===args.p_id)),error:null};
     calls.push(args);
     if(uncertain){uncertain=false;return {error:{message:'Network timeout'}};}
     const row={id:'saved-row',...args.p_data};
@@ -82,4 +83,11 @@ function setup(role='staff'){
  await t.api.load({silent:true});assert.equal(t.api.signature(),signature,'server clock alone is not a data change');
  await t.api.load();assert.equal(paints,1,'explicit refresh repaints once');
 }
-console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent background updates');
+{
+ const t=setup('admin');t.data.payrolls=[{id:'draft',employee_id:'employee-1',period_start:'2001-01-01',period_end:'2001-01-02',status:'draft',work_minutes:60,gross:60,net:60,adjustments:[],snapshot:{segments:[],missing_rates:false,open_shifts:false,pending_corrections:false}}];
+ await t.api.load();await t.api.handleAction('hr_review_payroll','draft');
+ assert.equal(t.calls.length,0,'review never approves or writes a payment');assert.match(t.api.renderAdmin(),/راجع قبل الاعتماد/);
+ await t.api.handleAction('hr_confirm_payroll','draft');
+ assert.equal(t.calls[0].p_action,'approve_payroll');assert.equal(t.calls[0].p_data.expected_snapshot.missing_rates,false,'approval carries the reviewed snapshot');
+}
+console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent updates, explicit payroll review');

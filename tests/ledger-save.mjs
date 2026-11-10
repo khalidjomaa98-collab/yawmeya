@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const app=fs.readFileSync(new URL('../docs/app.js',import.meta.url),'utf8');
+const code=app.slice(app.indexOf('async function op('),app.indexOf('/* ---------- pieces'));
+const ctx={ui:{},DEMO:false,render(){},softRender(){},toast(){},errText:()=>'',async refresh(){},document:{querySelector(){return null;}}};
+vm.createContext(ctx);vm.runInContext(code,ctx);
+let release,local=0,remote=0;
+const pending=ctx.op(()=>local++,()=>new Promise(r=>release=r));
+assert.equal(ctx.ui.saveState,'saving');
+assert.equal(await ctx.op(()=>local++,async()=>remote++),false);
+assert.equal(local,1);assert.equal(remote,0,'second write is blocked while first awaits confirmation');
+release();assert.equal(await pending,true);assert.equal(ctx.ui.saveState,'saved');
+assert.equal(await ctx.op(()=>{},async()=>{throw Error('network');}),false);
+assert.equal(ctx.ui.saveState,'uncertain');assert.equal(ctx.ui.saving,false);
+console.log('PASS: ledger save status and duplicate-submit guard');

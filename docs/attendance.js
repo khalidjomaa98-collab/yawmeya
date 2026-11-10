@@ -47,12 +47,14 @@
     reset(); state.actor=key;
     const t=date(Date.now()); state.from=t.slice(0,8)+'01'; state.to=shiftDate(t,-1); if(state.from>state.to)state.from=state.to.slice(0,8)+'01';
     state.pending=stored('pending'); state.created=stored('created');
+    try{const f=JSON.parse(localStorage.getItem('hr-filters:'+a.id)||'{}');Object.assign(state,f);}catch(_){}
   }
-  function reset() { generation++;state=blank();loading=null;if(clock)clearInterval(clock);clock=null; }
+  function reset() { if(state?.reportImages)state.reportImages.forEach(u=>URL.revokeObjectURL(u));generation++;state=blank();loading=null;if(clock)clearInterval(clock);clock=null; }
   function redraw() { if(typeof render==='function'&&actor())render(); }
   function errText(err) {
     const s=String(err?.message||err?.code||err||'').toLowerCase();
     if(/offline|fetch|network|load failed/.test(s)||!online())return 'مفيش اتصال مؤكد. اتصل بالنت واضغط إعادة المحاولة بنفس الطلب.';
+    if(/payroll changed/.test(s))return 'الحساب اتغير بعد المراجعة. افتح مراجعة الكشف من جديد قبل الاعتماد.';
     if(/rate/.test(s))return 'في ساعات من غير أجر محدد. حدّد سعر الساعة من تاريخ بداية الشغل.';
     if(/overlap|already.*approved|double/.test(s))return 'الفترة دي فيها ساعات معتمدة قبل كده. اختار فترة تانية.';
     if(/today|future|period.*end|ended|complete.*day/.test(s))return 'اعتماد الكشف بعد انتهاء آخر يوم في الفترة؛ اليوم الحالي يفضل مسودة.';
@@ -119,10 +121,18 @@
   function syncDates() {
     document.querySelectorAll('.att-date').forEach(w=>{w.querySelector('[data-hr-date-label]').textContent=dateText(w.querySelector('input').value);});
   }
+  function decorateDates(){
+    document.querySelectorAll('input[type="date"],input[type="datetime-local"]').forEach(input=>{
+      if(input.closest('.att-date'))return;const wrapper=document.createElement('span');wrapper.className='att-date';
+      const label=document.createElement('span');label.dataset.hrDateLabel='';label.setAttribute('aria-hidden','true');label.textContent=dateText(input.value);
+      const arrow=document.createElement('span');arrow.setAttribute('aria-hidden','true');arrow.textContent='▾';
+      input.parentNode.insertBefore(wrapper,input);wrapper.append(label,arrow,input);
+    });
+  }
   function reason(name='reason',label='السبب') {return `<label class="att-field"><span>${e(label)}</span><textarea name="${name}" required maxlength="500" rows="2"></textarea></label>`;}
   function employeeSelect(name='employee_id',selected=state.employee) {return `<label class="att-field"><span>الموظف</span><select name="${name}" required>${roster().map(x=>`<option value="${e(x.id)}" ${x.id===selected?'selected':''}>${e(x.name)}${x.active?'':' (متوقف)'}</option>`).join('')}</select></label>`;}
   function notices() {
-    return `${demo()?'<p class="att-notice">تجربة محلية · بيانات مثال · مفيش عمليات بتتسجل</p>':''}${!online()?'<p class="att-error">مفيش نت. الحضور والمرتبات محتاجين تأكيد مباشر، ومش بيتحفظوا أوفلاين.</p>':''}${state.error?`<div class="att-error" role="alert">${e(state.error)} ${btn('refresh','حدّث البيانات')}</div>`:''}${state.notice?`<p class="att-notice" role="status">${e(state.notice)}</p>`:''}${state.pending?`<div class="att-error">في طلب لسه محتاج تأكيد. إعادة المحاولة بنفس رقم الطلب بتمنع التكرار. ${btn('retry','إعادة تأكيد الطلب','',true,disabled())}</div>`:''}`;
+    return `${state.busy?'<p class="att-notice" role="status">جاري تأكيد الحفظ على السيرفر…</p>':''}${demo()?'<p class="att-notice">تجربة محلية · بيانات مثال · مفيش عمليات بتتسجل</p>':''}${!online()?'<p class="att-error">مفيش نت. الحضور والمرتبات محتاجين تأكيد مباشر، ومش بيتحفظوا أوفلاين.</p>':''}${state.error?`<div class="att-error" role="alert">${e(state.error)} ${btn('refresh','حدّث البيانات')}</div>`:''}${state.notice?`<p class="att-notice" role="status">${e(state.notice)}</p>`:''}${state.pending?`<div class="att-error">في طلب لسه محتاج تأكيد. إعادة المحاولة بنفس رقم الطلب بتمنع التكرار. ${btn('retry','إعادة تأكيد الطلب','',true,disabled())}</div>`:''}`;
   }
   function shell(title,body) {
     const back=actor()?.role==='staff'?'':'<button class="ibtn" type="button" data-a="hrBack">→ رجوع لليومية</button>';
@@ -149,8 +159,8 @@
   }
   function shiftLogs() {
     const from=state.logFrom||date(now()).slice(0,8)+'01',to=state.logTo||date(now());
-    const list=ownRows('shifts').filter(s=>!s.end_at||(date(s.start_at)<=to&&date(s.end_at)>=from)).slice().sort((a,b)=>Date.parse(b.start_at)-Date.parse(a.start_at));
-    return `<section class="att-card"><h2>سجل الحضور</h2>${form('logs',`<div class="att-grid">${field('من','from','date',from,'required')}${field('لحد','to','date',to,'required')}</div>${submit('اعرض السجل',false,true)}`)}<p class="att-muted">بتوقيت مصر · الوردية مستمرة لحد الانصراف.</p>${list.length?list.map(s=>`<details class="att-entry"><summary><span>${admin()?`<b>${e(employee(s.employee_id)?.name||'الموظف')}</b><br>`:''}${e(fmt(s.start_at))}</span><span class="att-pill">${s.end_at?'مقفولة':e(status(s))}</span></summary><p>الحضور: ${e(fmt(s.start_at))}</p><p>الانصراف: ${e(fmt(s.end_at))}</p><p>وقت الشغل: ${duration(s)}</p>${rows('breaks').filter(b=>b.shift_id===s.id).map(b=>`<p class="att-muted">خروج شخصي: ${e(fmt(b.start_at))} ← ${e(fmt(b.end_at))}</p>`).join('')}${!admin()?correctionForm(s):''}</details>`).join(''):'<p class="att-empty">مفيش ورديات في الفترة دي.</p>'}</section>`;
+    const list=ownRows('shifts').filter(s=>(!state.logEmployee||s.employee_id===state.logEmployee)&&(!state.logQuery||(employee(s.employee_id)?.name||'').includes(state.logQuery))).filter(s=>!s.end_at||(date(s.start_at)<=to&&date(s.end_at)>=from)).slice().sort((a,b)=>Date.parse(b.start_at)-Date.parse(a.start_at));
+    return `<section class="att-card"><h2>سجل الحضور</h2>${form('logs',`${admin()?`<label class="att-field"><span>الموظف</span><select name="employee"><option value="">كل الموظفين</option>${roster().map(x=>`<option value="${e(x.id)}" ${x.id===state.logEmployee?'selected':''}>${e(x.name)}</option>`).join('')}</select></label>`:''}<div class="att-grid">${field('من','from','date',from,'required')}${field('لحد','to','date',to,'required')}</div>${submit('اعرض السجل',false,true)}`)}<p class="att-muted">بتوقيت مصر · الوردية مستمرة لحد الانصراف.</p>${list.length?list.map(s=>`<details class="att-entry" data-hr-shift="${e(s.id)}" ${state.focusShift===s.id?'open':''}><summary><span>${admin()?`<b>${e(employee(s.employee_id)?.name||'الموظف')}</b><br>`:''}${e(fmt(s.start_at))}</span><span class="att-pill">${s.end_at?'مقفولة':e(status(s))}</span></summary><p>الحضور: ${e(fmt(s.start_at))}</p><p>الانصراف: ${e(fmt(s.end_at))}</p><p>وقت الشغل: ${duration(s)}</p>${rows('breaks').filter(b=>b.shift_id===s.id).map(b=>`<p class="att-muted">خروج شخصي: ${e(fmt(b.start_at))} ← ${e(fmt(b.end_at))}</p>`).join('')}${!admin()?correctionForm(s):''}</details>`).join(''):'<p class="att-empty">مفيش ورديات في الفترة دي.</p>'}</section>`;
   }
   function correctionForm(s) {
     const pending=rows('requests').some(r=>r.shift_id===s.id&&r.status==='pending');
@@ -158,7 +168,24 @@
   }
   function requestList(review=false) {
     const list=ownRows('requests').slice().reverse();
-    return `<section class="att-card"><h2>طلبات تعديل الانصراف</h2>${list.length?list.map(r=>{const s=rows('shifts').find(x=>x.id===r.shift_id);return `<article class="att-entry"><div class="att-row"><b>${e(employee(r.employee_id)?.name||'الموظف')}</b><span class="att-pill">${e(({pending:'قيد المراجعة',approved:'مقبول',rejected:'مرفوض'})[r.status]||r.status)}</span></div><p>الحضور: ${e(fmt(s?.start_at))}</p><p>الانصراف المسجل: ${e(fmt(s?.end_at))}</p><p>الانصراف المطلوب: ${e(fmt(r.requested_end))}</p><p>${e(r.reason)}</p>${r.review_note?`<p class="att-muted">رد المدير: ${e(r.review_note)}</p>`:''}${review&&r.status==='pending'?form('review',`<input type="hidden" name="request_id" value="${e(r.id)}">${reason('reason','سبب القرار')}<label class="att-field"><span>القرار</span><select name="approve"><option value="true">قبول التعديل</option><option value="false">رفض الطلب</option></select></label>${submit('تأكيد القرار')}`):''}</article>`;}).join(''):'<p class="att-empty">مفيش طلبات تعديل.</p>'}</section>`;
+    return `<section class="att-card"><h2>طلبات تعديل الانصراف</h2>${list.length?list.map(r=>{const s=rows('shifts').find(x=>x.id===r.shift_id);return `<article class="att-entry" data-hr-request-shift="${e(r.shift_id)}"><div class="att-row"><b>${e(employee(r.employee_id)?.name||'الموظف')}</b><span class="att-pill">${e(({pending:'قيد المراجعة',approved:'مقبول',rejected:'مرفوض'})[r.status]||r.status)}</span></div><p>الحضور: ${e(fmt(s?.start_at))}</p><p>الانصراف المسجل: ${e(fmt(s?.end_at))}</p><p>الانصراف المطلوب: ${e(fmt(r.requested_end))}</p><p>${e(r.reason)}</p>${r.review_note?`<p class="att-muted">رد المدير: ${e(r.review_note)}</p>`:''}${review&&r.status==='pending'?form('review',`<input type="hidden" name="request_id" value="${e(r.id)}">${reason('reason','سبب القرار')}<label class="att-field"><span>القرار</span><select name="approve"><option value="true">قبول التعديل</option><option value="false">رفض الطلب</option></select></label>${submit('تأكيد القرار')}`):''}</article>`;}).join(''):'<p class="att-empty">مفيش طلبات تعديل.</p>'}</section>`;
+  }
+  function rememberFilters(){try{localStorage.setItem('hr-filters:'+ownId(),JSON.stringify({logFrom:state.logFrom,logTo:state.logTo,logEmployee:state.logEmployee,logQuery:state.logQuery,auditQuery:state.auditQuery}));}catch(_){}}
+  function auditView(){
+    const labels={hr_rates:'سعر الساعة',hr_shifts:'الحضور والانصراف',hr_breaks:'الخروج الشخصي',hr_requests:'تصحيح الانصراف',hr_payrolls:'كشف مرتب',hr_payments:'دفعة مرتب',hr_settings:'إعدادات الحضور',hr_alerts:'تذكير',profiles:'حساب موظف',txs:'حركة يومية',devices:'مخزون الأجهزة',device_sales:'بيع جهاز',shop_days:'يوم المحل',shops:'محل',shop_drawers:'درج',parties:'عميل'};
+    const fields={name:'الاسم',shop_id:'المحل',active:'نشط',role:'الصلاحية',start_at:'الحضور / بداية الخروج',end_at:'الانصراف / الرجوع',hourly_rate:'سعر الساعة',effective_on:'ساري من',amount:'المبلغ',reason:'السبب',review_note:'قرار المدير',requested_end:'الانصراف المطلوب',status:'الحالة',gross:'أجر الساعات',net:'الصافي',work_minutes:'دقائق العمل',adjustments:'البنود',paid_on:'تاريخ الدفعة',note:'الملاحظة',qty:'الكمية',buy_price:'سعر الشراء',sell_price:'سعر البيع',type:'نوع الحركة',pay:'الدرج',voucher:'البون',deleted_at:'المسح',transferred_at:'التسجيل في كناش',opening_balance:'رصيد البداية',closed_at:'قفل اليوم',reminder_hours:'مدة التذكير'};
+    const value=v=>v==null?'—':typeof v==='object'?JSON.stringify(v):typeof v==='boolean'?(v?'نعم':'لا'):employee(v)?.name||String(v);
+    const list=(state.data.audit||[]).slice().reverse().filter(a=>{const x=a.after_data||a.before_data||{};return !state.auditQuery||JSON.stringify([labels[a.entity],employee(a.actor_id)?.name,employee(x.employee_id)?.name,x.name]).includes(state.auditQuery);}).slice(0,200);
+    return `<section class="att-card"><h2>سجل التعديلات</h2><p class="att-muted">آخر ٢٠٠ نتيجة · السجل متاح لهشام فقط. تعديلات اليومية والمخزون من تاريخ تفعيل السجل.</p>${form('audit_filter',`${field('بحث بالموظف أو نوع السجل','query','search',state.auditQuery||'')}${submit('ابحث',false,true)}`)}${list.map(a=>{const before=a.before_data||{},after=a.after_data||{};const keys=Object.keys(fields).filter(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]));return `<details class="att-entry"><summary><span><b>${e(labels[a.entity]||a.entity)}</b><small>${e(employee(a.actor_id)?.name||'النظام / إدارة الحساب')} · ${e(fmt(a.created_at))}</small></span><span>${a.before_data?(a.after_data?'تعديل':'مسح'):'إضافة'}</span></summary>${keys.map(k=>`<p><b>${e(fields[k])}</b><br><del>${e(value(before[k]))}</del> ← <strong>${e(value(after[k]))}</strong></p>`).join('')||'<p>تم تحديث بيانات السجل.</p>'}</details>`;}).join('')||'<p>مفيش نتائج.</p>'}</section>`;
+  }
+  function reviewCard(){
+    const p=state.review;if(!p)return '';const x=p.snapshot||{},errors=[];
+    if(x.missing_rates)errors.push('سعر الساعة ناقص لبعض ساعات العمل');if(x.open_shifts)errors.push('في وردية لسه مفتوحة');if(x.pending_corrections)errors.push('في طلب تعديل انصراف منتظر');if(p.period_end>=date(now()))errors.push('آخر يوم في الفترة لسه ما انتهيش');
+    return `<section class="att-card att-review"><h2>راجع قبل الاعتماد</h2><b>${e(employee(p.employee_id)?.name||'الموظف')}</b><p>${e(p.period_start)} ← ${e(p.period_end)}</p><div class="att-net"><small>الصافي بعد كل البنود</small><strong>${cash(p.net)}</strong></div><p>العمل: ${minutes(p.work_minutes)} · أجر الساعات: ${cash(p.gross)}</p>${adjustmentList(p.adjustments)}${errors.map(t=>`<p class="att-error">${e(t)}</p>`).join('')}<p class="att-muted">الاعتماد يثبّت الكشف، ولا يصرف فلوس. لو الحساب اتغيّر هتحتاج تراجعه تاني.</p>${btn('confirm_payroll','اعتمد بالمبلغ المعروض',p.id,true,!!errors.length||disabled())}${btn('cancel_review','رجوع للمراجعة')}</section>`;
+  }
+  async function openAlert(id,shiftId){
+    await load({silent:true});const a=rows('alerts').find(x=>x.id===id);state.tab='live';state.focusShift=a?.shift_id||(rows('shifts').some(x=>x.id===shiftId)?shiftId:null);const target=rows('shifts').find(x=>x.id===state.focusShift);if(target){state.logFrom=date(target.start_at);state.logTo=date(target.end_at||now());state.logEmployee=target.employee_id;state.logQuery='';if(admin()&&rows('requests').some(r=>r.shift_id===target.id&&r.status==='pending'))state.tab='requests';}state.notice=state.focusShift?'راجع الوردية والتنبيه الموضح أدناه.':'التنبيه غير متاح لحسابك أو تم حذفه.';redraw();
+    if(state.focusShift){const el=document.querySelector(state.tab==='requests'?`[data-hr-request-shift="${state.focusShift}"]`:`[data-hr-shift="${state.focusShift}"]`);if(el){el.open=true;el.scrollIntoView({block:'center',behavior:'smooth'});}}
   }
   function paymentsFor(id) {return rows('payments').filter(p=>p.payroll_id===id);}
   function paid(p) {return paymentsFor(p.id).reduce((n,v)=>n+Math.round(Number(v.amount)*100),0)/100;}
@@ -168,7 +195,7 @@
     const canApprove=p.period_end<date(now());
     const snapshot=typeof p.snapshot==='object'&&p.snapshot?p.snapshot:{};
     const segments=Array.isArray(snapshot.segments)?snapshot.segments:[];
-    return `<article class="att-card"><div class="att-row"><h2>${e(employee(p.employee_id)?.name||'كشف المرتب')}</h2><span class="att-pill ${approved?'att-working':''}">${approved?'معتمد وثابت':'مسودة'}</span></div><p class="att-muted">${e(p.period_start)} ← ${e(p.period_end)} · بتوقيت مصر</p><div class="att-net"><small>صافي المرتب</small><strong>${cash(p.net)}</strong><span>${approved?'كشف معتمد':'مسودة للمراجعة'}</span></div><dl class="att-totals"><div><dt>وقت الشغل</dt><dd>${minutes(p.work_minutes)}</dd></div><div><dt>أجر الساعات</dt><dd>${cash(p.gross)}</dd></div>${approved?`<div><dt>اتصرف</dt><dd>${cash(paidAmount)}</dd></div><div><dt>المتبقي للموظف</dt><dd>${cash(remaining)}</dd></div>`:''}</dl>${adjustmentList(p.adjustments)}${segments.length?`<details class="att-entry"><summary>تفاصيل الأجر المحفوظة</summary>${segments.map(s=>`<p>${e(fmt(s.start_at))} ← ${e(fmt(s.end_at))} · ${minutes(s.work_minutes)} · الساعة ${cash(s.hourly_rate)}</p>`).join('')}</details>`:''}${!approved?`<p class="att-notice">المسودة قابلة للمراجعة. الاعتماد بعد انتهاء الفترة واستكمال الانصراف والتعديلات.</p>${admin()?btn('approve_payroll','اعتمد وثبّت الكشف',p.id,true,disabled()||!canApprove||!!state.pending):''}`:`<p class="att-muted">اعتمد ${e(fmt(p.approved_at))} · تفاصيل الساعات والأجر ثابتة وقت الاعتماد.</p>`}<h3>الدفعات</h3>${paymentsFor(p.id).map(x=>`<div class="att-entry"><b>${cash(x.amount)}</b><p>${e(x.paid_on)} · ${e(x.note)}</p></div>`).join('')||'<p class="att-muted">مفيش دفعات مسجلة.</p>'}${approved&&admin()&&remaining>0?form('payment',`<input type="hidden" name="payroll_id" value="${e(p.id)}">${field('مبلغ الدفعة','amount','text','','required inputmode="decimal"')}${field('تاريخ الصرف بتوقيت مصر','paid_on','date',date(now()),'required')}${reason('note','سبب / ملاحظة الصرف')}<p class="att-muted">ده تسجيل لدفعة صرفتها بالفعل، مش تحويل فلوس أو حركة في درج المحل.</p>${submit('سجّل الدفعة',!!state.pending)}`):''}</article>`;
+    return `<article class="att-card"><div class="att-row"><h2>${e(employee(p.employee_id)?.name||'كشف المرتب')}</h2><span class="att-pill ${approved?'att-working':''}">${approved?'معتمد وثابت':'مسودة'}</span></div><p class="att-muted">${e(p.period_start)} ← ${e(p.period_end)} · بتوقيت مصر</p><div class="att-net"><small>صافي المرتب</small><strong>${cash(p.net)}</strong><span>${approved?'كشف معتمد':'مسودة للمراجعة'}</span></div><dl class="att-totals"><div><dt>وقت الشغل</dt><dd>${minutes(p.work_minutes)}</dd></div><div><dt>أجر الساعات</dt><dd>${cash(p.gross)}</dd></div>${approved?`<div><dt>اتصرف</dt><dd>${cash(paidAmount)}</dd></div><div><dt>المتبقي للموظف</dt><dd>${cash(remaining)}</dd></div>`:''}</dl>${adjustmentList(p.adjustments)}${segments.length?`<details class="att-entry"><summary>تفاصيل الأجر المحفوظة</summary>${segments.map(s=>`<p>${e(fmt(s.start_at))} ← ${e(fmt(s.end_at))} · ${minutes(s.work_minutes)} · الساعة ${cash(s.hourly_rate)}</p>`).join('')}</details>`:''}${!approved?`<p class="att-notice">المسودة قابلة للمراجعة. الاعتماد بعد انتهاء الفترة واستكمال الانصراف والتعديلات.</p>${admin()?btn('review_payroll','راجع واعتمد الكشف',p.id,true,disabled()||!canApprove||!!state.pending):''}`:`<p class="att-muted">اعتمد ${e(fmt(p.approved_at))} · تفاصيل الساعات والأجر ثابتة وقت الاعتماد.</p>`}<div class="att-actions">${btn('preview_image','معاينة صورة الكشف',p.id)}${btn('share_payroll','مشاركة صورة الكشف',p.id)}</div>${state.reportId===p.id?(state.reportImages||[]).map(u=>`<img class="payroll-report" src="${e(u)}" alt="معاينة كشف المرتب">`).join(''):''}<h3>الدفعات</h3>${paymentsFor(p.id).map(x=>`<div class="att-entry"><b>${cash(x.amount)}</b><p>${e(x.paid_on)} · ${e(x.note)}</p></div>`).join('')||'<p class="att-muted">مفيش دفعات مسجلة.</p>'}${approved&&admin()&&remaining>0?form('payment',`<input type="hidden" name="payroll_id" value="${e(p.id)}">${field('مبلغ الدفعة','amount','text','','required inputmode="decimal"')}${field('تاريخ الصرف بتوقيت مصر','paid_on','date',date(now()),'required')}${reason('note','سبب / ملاحظة الصرف')}<p class="att-muted">ده تسجيل لدفعة صرفتها بالفعل، مش تحويل فلوس أو حركة في درج المحل.</p>${submit('سجّل الدفعة',!!state.pending)}`):''}</article>`;
   }
   function payrollList() {
     const list=ownRows('payrolls').slice().sort((a,b)=>String(b.period_end).localeCompare(String(a.period_end)));
@@ -192,8 +219,8 @@
   function renderStaff() {const ok=ready();return shell('حضوري ومرتبي',!ok?waiting():`${currentCard()}${shiftLogs()}${requestList()}${payrollList()}`);}
   function renderAdmin() {
     const ok=ready();if(!admin())return renderStaff();
-    const tabs=[['live','المتابعة'],['team','الموظفين'],['requests','التعديلات'],['payroll','المرتبات']];
-    return shell('الحضور والمرتبات',`${ok?`<nav class="att-tabs" aria-label="أقسام الحضور">${tabs.map(([k,v])=>`<button type="button" data-a="hr_tab" data-v="${k}" class="${state.tab===k?'on':''}" ${state.tab===k?'aria-current="page"':''}>${v}</button>`).join('')}</nav><div class="att-toolbar">${btn('refresh','تحديث البيانات')}<small>كل المواعيد بتوقيت مصر</small></div>${({live:()=>liveDashboard()+shiftLogs(),team,requests:()=>requestList(true),payroll:payrollBuilder}[state.tab]||liveDashboard)()}`:waiting()}`);
+    const tabs=[['live','المتابعة'],['team','الموظفين'],['requests','التعديلات'],['payroll','المرتبات'],['audit','السجل']];
+    return shell('الحضور والمرتبات',`${ok?`<nav class="att-tabs" aria-label="أقسام الحضور">${tabs.map(([k,v])=>`<button type="button" data-a="hr_tab" data-v="${k}" class="${state.tab===k?'on':''}" ${state.tab===k?'aria-current="page"':''}>${v}</button>`).join('')}</nav><div class="att-toolbar">${btn('refresh','تحديث البيانات')}<small>كل المواعيد بتوقيت مصر</small></div>${({live:()=>liveDashboard()+shiftLogs(),team,requests:()=>requestList(true),payroll:()=>reviewCard()+payrollBuilder(),audit:auditView}[state.tab]||liveDashboard)()}`:waiting()}`);
   }
   function renderWidget() {
     const ok=ready(), s=ok?activeShift(ownId()):null;
@@ -285,17 +312,24 @@
     synchronizeActor();const action=name.slice(3);if(!actor())return true;
     if(action==='add_adjustment'){const button=event?.target.closest('button');if(button){const i=state.adjustments||1;button.insertAdjacentHTML('beforebegin',adjustmentRow(i));state.adjustments=i+1;}return true;}
     if(action==='refresh'){await load();return true;}
-    if(action==='tab'){if(admin()&&['live','team','requests','payroll'].includes(value)){state.tab=value;redraw();}return true;}
+    if(action==='tab'){if(admin()&&['live','team','requests','payroll','audit'].includes(value)){state.tab=value;redraw();}return true;}
     if(action==='retry')return run(async()=>{if(state.pending){const p=state.pending;await command(p.action,p.data);}},'الطلب اتأكد؛ راجع البيانات المحدثة.');
     if(['clock_in','clock_out','pause','resume'].includes(action))return run(()=>command(action,{}),'الحركة اتسجلت بوقت السيرفر.');
-    if(action==='approve_payroll')return run(async()=>{requireAdmin();const p=rows('payrolls').find(x=>x.id===value);if(!p||p.status!=='draft')throw new Error('اختار مسودة صحيحة.');if(p.period_end>=date(now()))throw new Error('اعتماد الكشف بعد انتهاء آخر يوم في الفترة؛ اليوم الحالي يفضل مسودة.');await command('approve_payroll',{payroll_id:value});},'الكشف اتعمد واتثبت.');
+    if(action==='cancel_review'){state.review=null;redraw();return true;}
+    if(action==='preview_image'){try{const p=rows('payrolls').find(x=>x.id===value);if(!p)throw Error('الكشف غير متاح');if(state.reportImages)state.reportImages.forEach(u=>URL.revokeObjectURL(u));state.reportImages=(await window.PayrollShare.create(p,employee(p.employee_id)||{name:actor().name},paymentsFor(p.id))).map(f=>URL.createObjectURL(f));state.reportId=p.id;state.payroll=p.id;redraw();}catch(err){state.notice=err.message;redraw();}return true;}
+    if(action==='share_payroll'){try{const p=rows('payrolls').find(x=>x.id===value);if(!p)throw Error('الكشف غير متاح');state.notice=await window.PayrollShare.share(p,employee(p.employee_id)||{name:actor().name},paymentsFor(p.id));}catch(err){state.notice=err.message||'تعذر تجهيز الكشف';}redraw();return true;}
+    if(action==='review_payroll'){
+      requireAdmin();return run(async()=>{const res=await sb.rpc('hr_preview_payroll',{p_id:value});if(res.error)throw res.error;state.review=res.data;state.tab='payroll';},'الحساب الحالي جاهز للمراجعة.');
+    }
+    if(action==='confirm_payroll')return run(async()=>{requireAdmin();const p=state.review;if(!p||p.id!==value)throw Error('راجع الكشف الأول');await command('approve_payroll',{payroll_id:p.id,expected_snapshot:p.snapshot});state.review=null;state.payroll=p.id;},'الكشف اتعمد واتثبت.');
     return false;
   }
   async function handleForm(id,fd) {
     if(!String(id).startsWith('hr_'))return false;
     synchronizeActor();if(!actor())return true;
+    if(id==='hr_audit_filter'){state.auditQuery=String(fd.get('query')||'').trim();rememberFilters();redraw();return true;}
     if(id==='hr_logs'){
-      try{const from=getDate(fd,'from'),to=getDate(fd,'to');if(from>to)throw new Error('تاريخ البداية لازم يكون قبل النهاية.');state.logFrom=from;state.logTo=to;redraw();}catch(err){state.notice=err.message;redraw();}return true;
+      try{const from=getDate(fd,'from'),to=getDate(fd,'to');if(from>to)throw new Error('تاريخ البداية لازم يكون قبل النهاية.');state.logFrom=from;state.logTo=to;state.logEmployee=String(fd.get('employee')||'');state.logQuery=String(fd.get('query')||'').trim();rememberFilters();redraw();}catch(err){state.notice=err.message;redraw();}return true;
     }
     return run(async()=>{
       if(id==='hr_correct'){
@@ -341,5 +375,5 @@
   document.addEventListener('click',event=>{const el=event.target;if(el.matches?.('.att-date input')&&typeof el.showPicker==='function'){try{el.showPicker();}catch(_){}}});
   document.addEventListener('input',keepDraft);
   document.addEventListener('change',keepDraft);
-  window.Attendance={signature:()=>JSON.stringify([state.data.settings,...arrays.map(k=>state.data[k])]),load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,reset};
+  window.Attendance={signature:()=>JSON.stringify([state.data.settings,...arrays.map(k=>state.data[k])]),load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,decorateDates,openAlert,openAudit:async()=>{await load({silent:true});state.tab='audit';redraw();},reset};
 })();
