@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 32; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 33; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -376,24 +376,31 @@ function renderRecovery(){
     ${ui.recoveryError ? `<p class="err" role="alert">${esc(ui.recoveryError)}</p>` : ''}
     <button class="back" data-a="recoveryBack">→ رجوع للدخول</button></div></main>`;
 }
+const authHeader = () => `<header class="auth-header"><div class="auth-brand"><img src="icons/icon-192.png?v=33" alt=""><span dir="ltr">H-Cash</span></div>${themeBtn()}</header>`;
+const loginRole = u => u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير';
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
-    return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span> <span class="version-tag">إصدار ${APP_VERSION}</span><span style="flex:1"></span>${themeBtn()}</div>
-      <h1>مين بيسجل دلوقتي؟</h1>
-      ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير'}</small></button>`).join('')}</div>`
-        : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
-      ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}</div></main>`;
+    const users=ui.loginUsers.slice().sort((a,b)=>(b.role==='admin')-(a.role==='admin'));
+    return `<main class="login auth-screen gut"><div class="in">${authHeader()}
+      <section class="auth-intro"><span class="auth-eyebrow">إدارة شغلك، بكل بساطة</span><h1>أهلًا بيك</h1><p>اختار حسابك عشان تدخل البرنامج.</p></section>
+      <section class="auth-panel" aria-label="الحسابات"><div class="auth-section-title"><h2>حسابات الفريق</h2><span>${users.length} حسابات</span></div>
+      ${users.length ? `<div class="auth-users">${users.map(u => `<button class="ubtn auth-user ${u.role==='admin'?'is-owner':''}" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}<span class="auth-user-info"><b>${esc(u.name)}</b><small>${loginRole(u)}</small></span><span class="auth-user-arrow" aria-hidden="true">‹</span></button>`).join('')}</div>`
+        : `<p class="empty">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}</section>
+      ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}
+      <footer class="auth-footer"><span>H-Cash</span><span>إصدار ${APP_VERSION}</span></footer></div></main>`;
   }
   const u = ui.loginUsers.find(x => x.id === ui.pinUser), len = PIN_LEN[u.role];
-  return `<main class="login gut"><div class="in">
-    <button class="back" data-a="loginBack">→ رجوع</button>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px">${avatar(u.name)}<h1>${esc(u.name)}</h1><p class="muted">اكتب الرقم السري</p></div>
+  return `<main class="login auth-screen auth-pin gut"><div class="in">${authHeader()}
+    <button class="auth-back" data-a="loginBack">→ اختار حساب تاني</button>
+    <section class="auth-panel pin-panel"><div class="pin-person">${avatar(u.name)}<div><h1>${esc(u.name)}</h1><p>${loginRole(u)}</p></div></div>
+    <div class="pin-prompt"><h2>اكتب الرقم السري</h2><p>${len} أرقام للدخول لحسابك</p></div>
     <div class="dots ${ui.pinErr ? 'bad' : ''}" aria-label="${ui.pin.length} من ${len}">${Array.from({length:len}, (_, i) => `<span class="${i < ui.pin.length ? 'f' : ''}"></span>`).join('')}</div>
-    <p class="err" role="alert">${ui.pinBusy ? 'بيدخل...' : esc(ui.pinErr)}</p>
-    ${u.role === 'admin' ? '<button class="back" style="align-self:center;text-decoration:underline" data-a="forgotPin">نسيت الرقم السري؟</button>' : ''}
+    <p class="err pin-status" role="alert">${ui.pinBusy ? 'جاري تسجيل الدخول…' : esc(ui.pinErr)}</p>
     <div class="pad">${[1,2,3,4,5,6,7,8,9].map(n => `<button data-a="pin" data-v="${n}" ${ui.pinBusy ? 'disabled' : ''}>${n}</button>`).join('')}
-      <button data-a="pinBack" aria-label="امسح رقم">⌫</button><button data-a="pin" data-v="0" ${ui.pinBusy ? 'disabled' : ''}>0</button><span></span></div></div></main>`;
+      <button class="pin-delete" data-a="pinBack" aria-label="امسح رقم" ${ui.pinBusy ? 'disabled' : ''}>⌫</button><button data-a="pin" data-v="0" ${ui.pinBusy ? 'disabled' : ''}>0</button><span></span></div>
+    ${u.role === 'admin' ? '<button class="auth-forgot" data-a="forgotPin">نسيت الرقم السري؟</button>' : ''}
+    </section><footer class="auth-footer"><span>H-Cash</span><span>إصدار ${APP_VERSION}</span></footer></div></main>`;
 }
 
 function renderCashier(){

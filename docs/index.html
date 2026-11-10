@@ -8,8 +8,8 @@
 <script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <meta name="description" content="يومية المحلات: الكاشير بيسجل أخدت وأعطيت، وهشام بينقلها لكناش.">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png?v=32" type="image/png">
-<link rel="apple-touch-icon" href="icons/icon-192.png?v=32">
+<link rel="icon" href="icons/icon-192.png?v=33" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=33">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://srpgxvdbpkinrvklwywx.supabase.co">
@@ -444,18 +444,37 @@ details summary::-webkit-details-marker{display:none}
 .btn.took,.sheet .sh.took,.act.took .ic,.kstep .press b.took{color:var(--took-ink)}
 .btn.gave,.btn.danger,.sheet .sh.gave,.act.gave .ic,.badge,.offline,.kstep .press b.gave{color:var(--gave-ink)}
 
+/* Entry screens: compact team list and a calm, thumb-friendly PIN panel. */
+.auth-screen{background:var(--bg);color:var(--ink);padding-top:max(24px,env(safe-area-inset-top,0px));padding-bottom:max(24px,env(safe-area-inset-bottom,0px))}
+.auth-screen .in{max-width:440px;gap:22px}.auth-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.auth-brand{display:flex;align-items:center;gap:10px}.auth-brand img{width:42px;height:42px;border-radius:13px}.auth-brand>span{font-family:var(--num);font-size:1.35rem;font-weight:700;letter-spacing:-.5px}
+.auth-header .ibtn{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:13px;width:42px;height:42px}
+.auth-intro{padding:10px 2px 0}.auth-eyebrow{font-size:.78rem;color:var(--accent);font-weight:600;display:block;margin-bottom:7px}.auth-intro h1{font-size:1.9rem;line-height:1.35;margin:0 0 8px}.auth-intro p{font-size:.94rem;color:var(--muted);margin:0}
+.auth-panel{padding:8px 16px;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}
+.auth-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 14px}.auth-section-title h2{font-size:.87rem;margin:0}.auth-section-title>span{font-size:.73rem;color:var(--muted)}
+.auth-users{display:flex;flex-direction:column}.auth-screen .auth-user{width:100%;min-height:72px;display:flex;flex-direction:row;align-items:center;gap:12px;text-align:start;border:0;border-top:1px solid var(--line);border-radius:0;padding:12px 0;background:transparent;box-shadow:none;overflow:hidden}
+.auth-user .av{background:var(--cs-soft)!important;color:var(--accent);width:44px;height:44px;border-radius:14px;font-size:1rem}.auth-user.is-owner .av{background:var(--brand)!important;color:#fff}.auth-user-info{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}.auth-user-info b{font-size:1rem;font-weight:600;line-height:1.45;overflow-wrap:anywhere}.auth-user-info small{font-size:.75rem;color:var(--muted);font-weight:400}.auth-user-arrow{font-family:Arial,sans-serif;font-size:27px;color:var(--muted);padding-inline:6px}
+.auth-screen .auth-user:active{background:var(--sunk)}.auth-screen button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}.auth-footer{display:flex;justify-content:center;gap:10px;color:var(--muted);font-size:.72rem;direction:ltr}.auth-footer span+span{border-inline-start:1px solid var(--line);padding-inline-start:10px}
+.auth-back{align-self:flex-start;background:none;border:0;padding:0;color:var(--muted);font-size:.85rem;font-weight:500;min-height:32px}.auth-pin .in{gap:16px}.pin-panel{padding:22px;display:flex;flex-direction:column;align-items:stretch;gap:0}
+.pin-person{display:flex;align-items:center;justify-content:center;gap:12px}.pin-person>.av{width:46px;height:46px;border-radius:15px;background:var(--cs-soft)!important;color:var(--accent)}.pin-person h1{font-size:1.05rem;line-height:1.5;margin:0}.pin-person p{font-size:.76rem;color:var(--muted);margin:2px 0 0}
+.pin-prompt{text-align:center;margin:24px 0 20px}.pin-prompt h2{font-size:1.15rem;margin:0 0 5px}.pin-prompt p{color:var(--muted);font-size:.8rem;margin:0}
+.auth-pin .dots{gap:14px}.auth-pin .dots span{width:13px;height:13px;border-color:var(--muted);background:var(--sunk)}.auth-pin .dots span.f{background:var(--accent);border-color:var(--accent)}.auth-pin .dots.bad span{border-color:var(--gave)}
+.auth-pin .pin-status{min-height:26px;margin:10px 0 8px;color:var(--gave);font-size:.8rem;line-height:1.6}.auth-pin .pad{gap:10px}.auth-pin .pad button{width:100%;max-width:none;height:60px;min-height:56px;aspect-ratio:auto;border:1px solid var(--line);border-radius:15px;background:var(--sunk);color:var(--ink);font-size:1.55rem;font-weight:500}.auth-pin .pad button:active{background:var(--cs-soft);border-color:var(--accent)}.auth-pin .pad .pin-delete{background:transparent;border-color:transparent;color:var(--muted);font-size:1.35rem}
+.auth-forgot{align-self:center;margin-top:18px;min-height:36px;padding:4px 8px;background:none;border:0;color:var(--accent);font-size:.84rem;font-weight:600}
+@media(max-width:370px){.auth-screen .in{gap:18px}.auth-panel{padding-inline:14px}.auth-intro h1{font-size:1.65rem}.pin-panel{padding:18px}.auth-pin .pad button{height:56px}.auth-pin .in{gap:12px}}
+
 </style>
-<link rel="stylesheet" href="attendance.css?v=32">
+<link rel="stylesheet" href="attendance.css?v=33">
 </head>
 <body>
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=32"></script>
-<script src="payroll-share.js?v=32"></script>
-<script src="attendance.js?v=32"></script>
-<script src="receipts.js?v=32"></script>
-<script src="backups.js?v=32"></script>
-<script src="app.js?v=32"></script>
+<script src="config.js?v=33"></script>
+<script src="payroll-share.js?v=33"></script>
+<script src="attendance.js?v=33"></script>
+<script src="receipts.js?v=33"></script>
+<script src="backups.js?v=33"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>
