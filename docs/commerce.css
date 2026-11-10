@@ -27,3 +27,8 @@
 .device-sale-price{font-weight:700;font-size:1.18rem;color:var(--ink);margin-top:4px}.device-sale-price .cur{font-size:.75rem;font-weight:400;color:var(--muted)}
 
 .initial-data{width:100%;max-width:680px}.initial-data h1{font-size:1.2rem}.data-skeleton{display:flex;flex-direction:column;gap:12px;margin-top:16px}.data-skeleton i{height:22px;display:block;border-radius:8px;background:var(--sunk)}.data-skeleton i:nth-child(2){width:70%}.data-skeleton i:nth-child(3){height:76px}@media(prefers-reduced-motion:no-preference){.data-skeleton{animation:softPulse 1.2s ease-in-out infinite}}
+
+/* Scroll stays inside the sheet, including at its upper/lower boundary. */
+body.modal-open .scroller{overflow:hidden!important;overscroll-behavior:none}
+.overlay{overflow:hidden;overscroll-behavior:none}.sheet{overscroll-behavior:contain;overflow-y:auto;touch-action:pan-y pinch-zoom;-webkit-overflow-scrolling:touch}
+.scroller{scrollbar-gutter:stable}

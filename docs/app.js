@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 36; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 37; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -783,7 +783,7 @@ function render(){
   if (oldOv && !ui.modal && !calm()){
     oldOv.classList.add('out'); oldOv.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
     oldOv.querySelectorAll('[data-a]').forEach(e => e.removeAttribute('data-a'));
-    app.appendChild(oldOv); setTimeout(() => oldOv.remove(), 240);
+    app.appendChild(oldOv); setTimeout(() => {oldOv.remove();HCashModalScroll.sync(!!document.querySelector('.overlay'));}, 240);
   }
   // list rows: stagger on a new screen, otherwise only rows that just arrived
   let i = 0;
@@ -802,6 +802,7 @@ function render(){
   if (ov && hadModal) ov.classList.add('still');
   if (ui.modal?.kind === 'send'){ const k = app.querySelector('.kstep'); if (k && lastSendId && lastSendId !== ui.modal.id) k.classList.add('swap'); lastSendId = ui.modal.id; }
   else lastSendId = null;
+  HCashModalScroll.sync(!!app.querySelector('.overlay'));
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
   if (me?.role === 'admin' && !ui.hr && ui.tab === 'notes' && S.notes.some(n => !n.read)){
     const ids = S.notes.filter(n => !n.read).map(n => n.id);
