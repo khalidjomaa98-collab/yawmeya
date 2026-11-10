@@ -1,0 +1,16 @@
+/* Owner-only UI. All authorization and file access are enforced by the Edge Function. */
+window.HCashBackups=(()=>{
+ let rows=[],busy=false,message='',link='';
+ const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const time=v=>new Intl.DateTimeFormat('ar-EG',{timeZone:'Africa/Cairo',dateStyle:'medium',timeStyle:'short'}).format(new Date(v));
+ async function call(body){const r=await sb.functions.invoke('hcash-backup',{body});if(r.error)throw Error('تعذر إتمام النسخة. اتأكد من الاتصال وحدّث القائمة.');return r.data;}
+ function renderCard(){if(me?.role!=='admin')return '';return `<details class="settings-section"><summary><h2>النسخ الاحتياطية</h2></summary><p class="muted small">نسخة يومية تلقائية، ونسخة قبل المسح. ملفات بيانات الشغل خاصة بهشام؛ الأرقام السرية ومفاتيح الدخول خارج ملفات التنزيل.</p><div class="row2"><button class="btn primary" data-a="backup_create" ${busy?'disabled':''}>نسخة دلوقتي</button><button class="btn" data-a="backup_list" ${busy?'disabled':''}>حدّث القائمة</button></div><p role="status">${busy?'جاري تجهيز وفحص النسخة…':e(message)}</p>${link?`<a class="btn" href="${e(link)}" target="_blank" rel="noopener">تنزيل النسخة · الرابط صالح دقيقة</a>`:''}${rows.map(r=>`<div class="backup-row"><div><b>${e(time(r.created_at))}</b><small>${r.status==='ready'?'جاهزة ومفحوصة':r.status==='failed'?'تعذر النسخ':'قيد التجهيز'}${r.bytes?' · '+Math.ceil(r.bytes/1024)+' كيلوبايت':''}</small></div>${r.status==='ready'?`<div><button class="btn sm" data-a="backup_check" data-v="${r.id}" ${busy?'disabled':''}>اختبار استرجاع</button><button class="btn sm" data-a="backup_download" data-v="${r.id}" ${busy?'disabled':''}>تنزيل</button></div>`:''}</div>`).join('')||'<p class="muted small">اضغط تحديث القائمة لعرض آخر النسخ.</p>'}<small class="muted">الاختبار يعيد بناء النسخة مؤقتًا ويفحص الروابط بين سجلاتها، بدون استبدال البيانات الحالية. استرجاع بيانات فعلية يحتاج مراجعة النسخة أولًا. النسخة لا تستبدل نسخة خدمة تسجيل الدخول.</small></details>`;}
+ async function action(name,id){if(me?.role!=='admin'||busy)return;if(DEMO){message='وضع تجربة؛ النسخ الفعلية من حساب هشام فقط.';render();return;}const ownerId=me.id;busy=true;message='';link='';render();try{
+  if(name==='create'){await call({action:'create'});message='النسخة اتعملت ونجح اختبار إعادة بنائها.';}
+  else if(name==='check'){await call({action:'check',id});message='اختبار الاسترجاع نجح. بيانات المحل الحالية متغيرتش.';}
+  else if(name==='download'){const result=await call({action:'download',id});if(me?.id!==ownerId)return;link=result.url;if(window.Capacitor?.isNativePlatform?.()&&window.Capacitor.Plugins.AppLauncher){await window.Capacitor.Plugins.AppLauncher.openUrl({url:result.url});message='اتفتح التنزيل في المتصفح.';}}
+  const data=await call({action:'list'});if(me?.id===ownerId)rows=data.backups||[];
+ }catch(error){message=error.message;}finally{busy=false;if(me?.id===ownerId)render();}}
+ document.addEventListener('click',event=>{const b=event.target.closest?.('[data-a^="backup_"]');if(!b)return;event.preventDefault();event.stopPropagation();void action(b.dataset.a.slice(7),b.dataset.v);},true);
+ return {render:renderCard,reset(){rows=[];message='';link='';busy=false;}};
+})();

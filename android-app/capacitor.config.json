@@ -1,6 +1,6 @@
 {
   "appId": "com.yawmeya.app",
-  "appName": "اليومية",
+  "appName": "H-Cash",
   "webDir": "../docs",
   "server": {
     "url": "https://GITHUB_USER.github.io/yawmeya/",

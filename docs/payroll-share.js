@@ -4,7 +4,7 @@ window.PayrollShare = {
     if(document.fonts)await document.fonts.ready;
     const n=v=>Number(v||0).toLocaleString('en-US',{maximumFractionDigits:2});
     const paid=payments.reduce((sum,p)=>sum+Math.round(Number(p.amount)*100),0)/100;
-    const lines=[['اليومية · كشف مرتب',true],[employee.name,true],
+    const lines=[['H-Cash · كشف مرتب',true],[employee.name,true],
       [`الفترة: ${payroll.period_start} إلى ${payroll.period_end}`],
       [payroll.status==='approved'?'معتمد':'مسودة للمراجعة · ليست إثبات صرف'],
       [`وقت العمل: ${n(Number(payroll.work_minutes)/60)} ساعة`],
@@ -26,7 +26,7 @@ window.PayrollShare = {
       const rows=wrapped.slice(offset,offset+32),canvas=document.createElement('canvas');canvas.width=1000;canvas.height=180+rows.length*60;
       const c=canvas.getContext('2d');c.fillStyle='#f1f3f7';c.fillRect(0,0,1000,canvas.height);c.fillStyle='#ffffff';c.fillRect(24,24,952,canvas.height-48);
       c.direction='rtl';c.textAlign='right';c.textBaseline='middle';
-      rows.forEach(([text,bold],i)=>{c.fillStyle=bold?'#14325e':'#303b4b';c.font=`${bold?'700':'400'} ${bold?36:30}px "IBM Plex Sans Arabic", Tahoma, sans-serif`;c.fillText(text,940,85+i*60,880);});
+      rows.forEach(([text,bold],i)=>{c.fillStyle=bold?'#102a35':'#303b4b';c.font=`${bold?'700':'400'} ${bold?36:30}px "IBM Plex Sans Arabic", Tahoma, sans-serif`;c.fillText(text,940,85+i*60,880);});
       c.font='22px Tahoma';c.fillStyle='#657184';c.fillText(`صفحة ${files.length+1} · ${new Intl.DateTimeFormat('ar-EG',{timeZone:'Africa/Cairo',dateStyle:'medium',timeStyle:'short'}).format(new Date())}`,940,canvas.height-65);
       const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error('تعذر تجهيز صورة الكشف');
       files.push(new File([blob],`payroll-${payroll.period_start}-${files.length+1}.png`,{type:'image/png'}));

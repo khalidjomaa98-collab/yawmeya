@@ -32,7 +32,7 @@ Deno.serve(async(req)=>{
   const raw=Deno.env.get("FCM_SERVICE_ACCOUNT");if(!raw)return reply({error:"not_configured"},503);
   const sa=JSON.parse(raw),token=await googleToken(sa);let sent=0,failed=0;
   for(const phone of phones){
-   const r=await fetch("https://fcm.googleapis.com/v1/projects/"+encodeURIComponent(sa.project_id)+"/messages:send",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({message:{token:phone.token,notification:{title:"اليومية · الحضور",body:alert.text},data:{module:"attendance",alert_id:alert.id},android:{priority:"high",notification:{sound:"default",tag:"hr-"+alert.id}}}})});
+   const r=await fetch("https://fcm.googleapis.com/v1/projects/"+encodeURIComponent(sa.project_id)+"/messages:send",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({message:{token:phone.token,notification:{title:"H-Cash · الحضور",body:alert.text},data:{module:"attendance",alert_id:alert.id},android:{priority:"high",notification:{sound:"default",tag:"hr-"+alert.id}}}})});
    if(r.ok){sent++;continue;}
    failed++;const e=await r.json().catch(()=>({}));
    if(e.error?.details?.some((x:{errorCode?:string})=>x.errorCode==="UNREGISTERED"))await db.from("push_tokens").delete().eq("token",phone.token);

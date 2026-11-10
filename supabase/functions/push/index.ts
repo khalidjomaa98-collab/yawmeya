@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${at}`, "Content-Type": "application/json" },
       body: JSON.stringify({ message: {
         token,
-        notification: { title: TITLES[kind] ?? "اليومية", body: text },
+        notification: { title: TITLES[kind] ?? "H-Cash", body: text },
         data: { kind: String(kind ?? ""), id: String(id ?? ""), ...(shiftId ? {module:"attendance",shift_id:shiftId} : {}) },
         android: { priority: "high", notification: { sound: "default", tag: String(id ?? "") } },
       } }),

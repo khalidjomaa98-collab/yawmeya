@@ -40,7 +40,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: اليومية - نسخة الأندرويد
+          name: H-Cash - نسخة الأندرويد
           body: نزّل ملف yawmeya.apk على موبايل الأندرويد وسطّبه.
           files: yawmeya.apk
           make_latest: true

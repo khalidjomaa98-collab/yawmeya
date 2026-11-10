@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 31; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 32; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -64,7 +64,7 @@ function applyTheme(t){
   if (t === 'auto') r.removeAttribute('data-theme'); else r.dataset.theme = t;
   lsSet('yawmeya-theme', t);
   const dark = t === 'dark' || (t === 'auto' && darkMQ.matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#122640' : '#14325e');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#102a35' : '#102a35');
 }
 const themeBtn = () => `<button class="ibtn thbtn" data-a="themeSheet" aria-label="شكل البرنامج: ${THEMES[themePref()][0]}">${icon[themePref()]}</button>`;
 const TAB_ORDER = ['kenash', 'dev', 'txs', 'notes', 'set'];
@@ -118,20 +118,23 @@ const mapNote = n => ({shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts),
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
 
+async function readPages(make){
+  const all=[];for(let offset=0;;offset+=500){const batch=must(await make().range(offset,offset+499));all.push(...batch);if(batch.length<500)return {data:all,error:null};}
+}
 async function refresh(){
   if (DEMO) return;
   if (me?.role === 'staff'){ await Attendance.load({silent:true}); return; }
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
-  const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
+  const txq = ()=>sb.from('txs').select('*').order('ts',{ascending:false}).order('id');
   const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
     sb.from('shops').select('*').order('sort'),
-    sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at'),
-    sb.from('parties').select('id,name,phone').order('name'),
-    admin ? txq.or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq,
+    readPages(()=>sb.from('profiles').select('id,name,role,active,created_at,shop_id').order('created_at').order('id')),
+    readPages(()=>sb.from('parties').select('id,name,phone').order('name').order('id')),
+    readPages(()=>admin ? txq().or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq()),
     admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
-    admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at', {ascending:false}) : sb.from('shop_days').select('*').is('closed_at', null),
-    sb.from('devices').select('*').eq('archived', false).order('name'),
-    sb.from('device_sales').select('*').gte('ts', from + 'T00:00:00Z').order('ts', {ascending:false}).limit(3000),
+    readPages(()=>admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at',{ascending:false}).order('id') : sb.from('shop_days').select('*').is('closed_at',null).order('id')),
+    readPages(()=>sb.from('devices').select('*').eq('archived',false).order('name').order('id')),
+    readPages(()=>sb.from('device_sales').select('*').gte('ts',from+'T00:00:00Z').order('ts',{ascending:false}).order('id')),
     sb.from('shop_drawers').select('*')
   ]);
   setDrawers(must(drawers));
@@ -189,7 +192,7 @@ function onChange(table, p){
 }
 function notifyDevice(n){
   if (!document.hidden) return;
-  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('اليومية', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}); } catch(e){}
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('H-Cash', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}); } catch(e){}
 }
 function softRender(){
   const a = document.activeElement;
@@ -222,7 +225,7 @@ async function loadLogin(){
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data;try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
+  if (r.data && r.data.active){ me = r.data;ui.saving=false;ui.saveState='';try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
   else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
@@ -243,6 +246,7 @@ function errText(e){
   if (m === 'locked') return 'اتكتب رقم غلط كتير. استنى 10 دقايق وجرّب تاني.';
   if (m === 'admin_pin') return 'رقم المدير لازم يكون 6 أرقام.';
   if (m === 'pin') return 'الرقم السري لازم يكون 4 أرقام.';
+  if(m==='backup_failed')return 'تعذرت النسخة الاحتياطية، المسح متوقف. جرّب تحديث قائمة النسخ.';
   if (m === 'forbidden') return 'الحركة دي لهشام بس.';
   if (m.includes('NO_STOCK')) return 'الكمية دي مش موجودة في المخزن.';
   if (m.includes('VOUCHER')) return 'اكتب رقم البون.';
@@ -286,7 +290,7 @@ function band(inner, tall){
   const where = me.role === 'admin' ? 'المدير' : me.role === 'staff' ? 'موظف' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
     <header class="band${tall ? ' tall' : ''}"><div class="in gut">
-      <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
+      <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=32" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
         ${themeBtn()}
@@ -347,10 +351,10 @@ const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? saleTot(daySales
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
 /* ---------- screens ---------- */
-const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div><p class="muted">بيحمّل...</p></div></main>`;
+const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted">بيحمّل...</p></div></main>`;
 
 function renderSetup(){
-  return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
     <h1>أول تشغيل: حساب المدير</h1>
     <p class="muted">الحساب ده لهشام. منه هيضيف الكاشيرية ويتابع الحركات.</p>
     <form id="setupf" class="card">
@@ -364,7 +368,7 @@ function renderRecovery(){
   const reset = ui.recovery === 'reset';
   const title = reset ? 'رقم سري جديد لهشام' : 'نسيت الرقم السري';
   const intro = reset ? 'اكتب 6 أرقام جديدة وأكدها. الحركات والحسابات هتفضل محفوظة.' : 'اكتب إيميل الاستعادة المسجل لحساب هشام. هنرسل عليه رابط لتعيين رقم جديد.';
-  return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية</div>
+  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
     <h1>${title}</h1><p class="muted">${intro}</p>
     ${ui.recovery === 'sent' ? '<div class="card"><p role="status">لو الإيميل مسجل، هتوصلك رسالة فيها رابط الاستعادة. راجع البريد المزعج كمان. افتح الرابط في المتصفح على نفس الموبايل أو الكمبيوتر.</p><p class="muted small">لو الرابط انتهت صلاحيته، اطلب رسالة جديدة.</p></div>' : `<form id="${reset ? 'recoverfinishf' : 'recoverrequestf'}" class="card">
       ${reset ? '<div class="field"><label for="rp1">الرقم الجديد</label><input id="rp1" name="pin" type="password" inputmode="numeric" pattern="[0-9٠-٩]{6}" maxlength="6" autocomplete="new-password" required></div><div class="field"><label for="rp2">اكتبه تاني</label><input id="rp2" name="pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" required></div>' : '<div class="field"><label for="recoveremail">إيميل هشام</label><input id="recoveremail" name="email" type="email" dir="ltr" autocomplete="email" required></div>'}
@@ -375,7 +379,7 @@ function renderRecovery(){
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
-    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية <span class="version-tag">إصدار ${APP_VERSION}</span><span style="flex:1"></span>${themeBtn()}</div>
+    return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span> <span class="version-tag">إصدار ${APP_VERSION}</span><span style="flex:1"></span>${themeBtn()}</div>
       <h1>مين بيسجل دلوقتي؟</h1>
       ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير'}</small></button>`).join('')}</div>`
         : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
@@ -515,7 +519,7 @@ function tabNotes(){
     <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
-  return `<div class="release-card"><div><b>اليومية</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
+  return `${HCashBackups.render()}<div class="release-card"><div><b dir="ltr">H-Cash</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
     <details class="settings-section"><summary><h2>الأدراج</h2></summary><form id="drawersf" class="card">
       <p class="muted small">اختار أسماء الأدراج المتاحة لكل محل. السجل القديم محفوظ.</p>
       ${S.shops.map(sh => `<fieldset class="dshop"><legend>${esc(sh.name)}</legend>${DRAWER_KEYS.map(k => `<div class="drow"><div class="field"><label for="dr_${sh.id}_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${sh.id}_${k}" name="n|${sh.id}|${k}" value="${dn(k, sh.id)}" maxlength="40" autocomplete="off"></div>
@@ -674,10 +678,10 @@ function renderModal(){
   if (m.kind === 'wipe'){
     const n = S.txs.length;
     return sheet(`<h2>تمسح كل الحركات؟</h2>`, `<form id="wipef">
-      <div class="banner">هتتمسح <b class="num">${n}</b> حركة وكل الإشعارات <b>نهائي</b>، ومش هينفع ترجع.</div>
+      <div class="banner">كل حركات المحلين ومبيعات الأجهزة والإشعارات هتتمسح من السجل الحالي. هتتعمل نسخة احتياطية قبل التنفيذ، والاسترجاع يحتاج مراجعتها.</div>
       <div class="field"><label for="w-ok">علشان تأكد، اكتب كلمة <b>امسح</b></label><input id="w-ok" name="ok" autocomplete="off" data-autofocus></div>
-      <p id="ferr" class="err" role="alert"></p>
-      <button class="btn danger wide">امسح كل حاجة</button></form>`);
+      <div class="field"><label for="wipe-pin">رقم هشام السري · ٦ أرقام</label><input id="wipe-pin" name="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" required></div><p class="muted small">هتتعمل نسخة احتياطية وتتراجع قبل المسح. الحضور والمرتبات مش هتتمسح.</p><p id="ferr" class="err" role="alert"></p>
+      <button class="btn danger wide">أكد النسخة وامسح الحركات</button></form>`);
   }
   if (m.kind === 'pin'){
     const u = user(m.id), len = PIN_LEN[u.role];
@@ -740,6 +744,7 @@ function render(){
   const hrSame=view===lastView&&view.startsWith('attendance:');
   const hrTop=hrSame?window.scrollY:0;
   const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
+  if(me)h+=HCashReceipts.render();
   if(me)h+=`<div class="save-indicator ${ui.saveState||''}" role="status">${ui.offline?'غير متصل · اتأكد من النت قبل التسجيل':ui.saveState==='saving'?'جاري الحفظ…':ui.saveState==='saved'?(DEMO?'تمت التجربة · بدون حفظ':'✓ اتحفظ على السيرفر'):ui.saveState==='uncertain'?'لم يتم تأكيد الحفظ · حدّث وراجع السجل قبل تكرار الحركة':''}</div>`;
   app.innerHTML = h;
   Attendance.decorateDates();
@@ -844,7 +849,7 @@ const A = {
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
-    Attendance.reset(); pushReady = false; ui.hr = false;
+    HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
@@ -922,7 +927,7 @@ const A = {
     return false;
   },
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
-  wipe(){ ui.modal = {kind:'wipe'}; },
+  wipe(){if(HCashReceipts.read()){toast('أكد محاولة الحفظ المعلّقة قبل المسح.');return false;}ui.modal = {kind:'wipe'}; },
   opening(v){ ui.modal = {kind:'opening', shopId:v}; A.drawer('cashier'); },
   drawer(v){ const m = ui.modal, d = openDay(m.shopId), cur = d && (v === 'acc' ? d.accOpening : d.opening); m.drawer = v; m.amt = cur != null ? String(cur) : ''; m.fresh = true; },
   useLast(){ const last = lastClosedCash(ui.modal.shopId, ui.modal.drawer); ui.modal.amt = String(Math.max(0, Math.round(last))); },
@@ -950,6 +955,7 @@ const A = {
     if (!m.pay) { formErr('اختار الفلوس راحت فين.'); return false; }
     const voucher = String(m.voucher || '').trim();
     if (m.pay === 'hcash' && !voucher) { formErr('اكتب رقم البون.'); document.getElementById('sv')?.focus(); return false; }
+    if(!DEMO){void HCashReceipts.submit('sale',{p_id:uuid(),p_device:d.id,p_qty:m.qty,p_price:price,p_pay:m.pay,p_voucher:m.pay==='hcash'?voucher:null},`بيع ${d.name} × ${m.qty} · ${nf(price*m.qty)} · ${payName(m.pay,d.shopId)}`);return false;}
     const sid = d.shopId, od = openDay(sid), day = od || {id:'local-' + uuid(), shopId:sid, openedAt:Date.now(), openedBy:me.id, closedAt:null, opening:null, accOpening:null};
     const s = {id:uuid(), ts:Date.now(), shopId:sid, dayId:day.id, deviceId:d.id, name:d.name, qty:m.qty, buy:d.buy, price, pay:m.pay, voucher:m.pay === 'hcash' ? voucher : '', userId:me.id, deleted:false, pending:!DEMO};
     op(() => { if (!od) S.days.push(day); S.sales.push(s); d.qty -= s.qty; ui.modal = null; toast(`اتباع ${d.name} بـ ${nf(s.qty * price)} ✓`); try { navigator.vibrate?.(20); } catch(e){} },
@@ -1073,6 +1079,7 @@ const F = {
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
     const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
     const note = String(fd.get('note') || '').trim();
+    if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed}`);return;}
     // no open day yet: start one on screen now; the server opens the real one with this entry
     const od = openDay(shopId), day = od || {id:'local-' + uuid(), shopId, openedAt:Date.now(), openedBy:me.id, closedAt:null};
     const tx = {id:uuid(), ts:Date.now(), date:dayOf(day.openedAt), dayId:day.id, shopId, userId:me.id, type:m.type, partyId, amount, note,
@@ -1091,9 +1098,9 @@ const F = {
        async () => must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:reason})), 'ما اتمسحتش.');
   },
   wipef(fd){
-    if (norm(fd.get('ok')) !== norm('امسح')) return formErr('اكتب كلمة "امسح" بالظبط.');
-    op(() => { S.txs = []; S.notes = []; seen.clear(); ui.modal = null; toast('اتمسحت كل الحركات'); },
-       async () => must(await sb.rpc('wipe_all')), 'ما اتمسحتش.');
+    if(norm(fd.get('ok'))!==norm('امسح'))return formErr('اكتب كلمة امسح بالظبط.');
+    const pin=latin(fd.get('pin')).trim();if(!/^\d{6}$/.test(pin))return formErr('اكتب رقم هشام السري: ٦ أرقام.');
+    act(async()=>{if(!DEMO){const result=await fnCall({action:'wipe',pin});ui.wipeRemaining=result.deleted?.remaining||0;}else {S.txs=[];S.sales=[];S.notes=[];}}, {done:()=>{ui.modal=null;toast(ui.wipeRemaining?'اتمسحت الحركات المحفوظة في النسخة. الحركات الجديدة أو المعدلة بعدها فضلت محفوظة.':'اتعملت نسخة احتياطية واتمسحت الحركات.');}});
   },
   pinf(fd){
     const u = user(ui.modal.id), len = PIN_LEN[u.role], pin = latin(fd.get('pin')).trim();

@@ -1,18 +1,25 @@
 {
   "name": "yawmeya-android",
   "private": true,
-  "version": "1.0.0",
-  "description": "Android shell for Yawmeya: loads the web app and can open Konnash.",
+  "version": "1.0.32",
+  "description": "H-Cash Android app",
   "scripts": {
-    "sync": "cap sync android"
+    "sync": "cap sync android",
+    "postinstall": "node scripts/cli-compat.cjs"
   },
   "dependencies": {
-    "@capacitor/android": "^6.2.1",
+    "@capacitor/android": "6.2.2",
     "@capacitor/app-launcher": "^6.0.4",
-    "@capacitor/cli": "^6.2.1",
-    "@capacitor/core": "^6.2.1",
+    "@capacitor/cli": "6.2.2",
+    "@capacitor/core": "6.2.2",
     "@capacitor/filesystem": "6.0.4",
     "@capacitor/push-notifications": "^6.0.4",
     "@capacitor/share": "6.0.4"
+  },
+  "overrides": {
+    "tar": "7.5.22",
+    "rimraf": "6.1.4",
+    "glob": "14.0.4",
+    "minimatch": "11.0.6"
   }
 }
