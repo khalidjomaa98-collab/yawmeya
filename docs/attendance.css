@@ -125,6 +125,11 @@
 .att-request-times{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0;background:var(--sunk);border-radius:12px;padding:14px}
 .att-request-times dt{font-size:.8rem;color:var(--muted);margin-bottom:6px}.att-request-times dd{font-size:.9rem;font-weight:600;margin:0;line-height:1.8;overflow-wrap:anywhere}
 .att-request-times>div+div{border-inline-start:1px solid var(--line);padding-inline-start:12px}.att-request-reason{margin-bottom:18px!important}
+.att-manual-breaks{display:flex;flex-direction:column;gap:12px}.att-manual-break{border:1px solid var(--line);border-radius:14px;padding:14px;min-width:0;margin:0}
+.att-manual-break legend{font-size:.85rem;color:var(--muted);padding-inline:5px}.att-manual-break>.att-btn{margin-top:12px;min-height:42px;font-size:.83rem}
+.att-manual-break .att-date{font-variant-numeric:tabular-nums}.att-tools>[data-a="hr_new_shift"]{color:var(--att-action);border-color:var(--att-action);order:2;flex-basis:100%}
+#hr_admin_shift .att-date [data-hr-date-label]{white-space:normal;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.att-root .att-review:has(#hr_admin_shift){scroll-margin-top:68px}
 @media(max-width:440px){.att-root .att-card{padding:18px}.att-person{flex-wrap:wrap}.att-person-time{margin-inline-start:52px;margin-top:-6px}.att-root .att-tabs-three button{font-size:.84rem}.att-view-heading{align-items:flex-start}}
 @media(max-width:350px){.att-root .att-content{padding-inline:12px}.att-root .att-card{padding:15px}.att-root .att-tools .att-btn{font-size:.78rem;padding-inline:9px}.att-tools{align-items:flex-start}.att-root .att-clock{font-size:2.15rem}}
 @media(prefers-reduced-motion:reduce){.att-root .att-btn,.att-root .att-tabs button{transition:none}.att-root .att-btn:active:not(:disabled){transform:none}}

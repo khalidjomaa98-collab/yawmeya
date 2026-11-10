@@ -107,4 +107,19 @@ function setup(role='staff'){
  await t.api.handleAction('hr_tab','team');assert.match(t.api.renderAdmin(),/الموظفين وأسعار الساعة/);
  await t.api.handleAction('hr_tab','requests');assert.match(t.api.renderAdmin(),/طلبات تعديل الانصراف/);assert.equal(t.calls.length,0);
 }
-console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent updates, payroll review, screen navigation, approved balances, manager attention');
+{
+ const t=setup('admin');await t.api.load();await t.api.handleAction('hr_new_shift');assert.match(t.api.renderAdmin(),/إضافة وردية يدوي/);
+ const fd=new FormData();fd.set('employee_id','other');fd.set('start_at','2001-01-01T22:00:30');fd.set('end_at','2001-01-02T06:00:30');fd.set('break_start_0','2001-01-02T01:00:00');fd.set('break_end_0','2001-01-02T01:30:00');fd.set('reason','تسجيل فترة قديمة');
+ await t.api.handleForm('hr_admin_shift',fd);assert.equal(t.calls[0].p_action,'admin_add_shift');assert.equal(t.calls[0].p_data.start_at,'2001-01-01T20:00:30.000Z');assert.equal(t.calls[0].p_data.breaks[0].end_at,'2001-01-01T23:30:00.000Z');
+ assert.equal(t.calls[0].p_data.reason,'تسجيل فترة قديمة');
+}
+{
+ const t=setup('admin');t.data.shifts=[{id:'old',employee_id:'other',start_at:'2001-01-01T06:00:45.123Z',end_at:'2001-01-01T14:00:45.456Z',change_reason:null,recorded_by:null}];await t.api.load();await t.api.handleAction('hr_edit_shift','old');
+ assert.match(t.api.renderAdmin(),/تعديل الوردية/);const fd=new FormData();fd.set('shift_id','old');fd.set('start_at','2001-01-01T08:00:45');fd.set('end_at','2001-01-01T16:00:45');fd.set('reason','تأكيد التسجيل');
+ await t.api.handleForm('hr_admin_shift',fd);assert.equal(t.calls[0].p_action,'admin_update_shift');assert.equal(t.calls[0].p_data.start_at,t.data.shifts[0].start_at,'unchanged input preserves subsecond server time');assert.equal(t.calls[0].p_data.end_at,t.data.shifts[0].end_at);assert.equal(t.calls[0].p_data.expected_snapshot.shift.id,'old');
+}
+{
+ const t=setup();await t.api.load();await t.api.handleAction('hr_new_shift');assert.doesNotMatch(t.api.renderStaff(),/إضافة وردية يدوي/);
+ await t.api.handleForm('hr_admin_shift',new FormData());assert.equal(t.calls.length,0,'staff cannot submit manual shifts');
+}
+console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent updates, payroll review, navigation, balances, manager manual entry, shift editing and precise timestamps');
