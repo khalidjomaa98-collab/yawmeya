@@ -14,6 +14,7 @@ function setup(role='staff'){
     calls.push(args);
     if(uncertain){uncertain=false;return {error:{message:'Network timeout'}};}
     const row={id:'saved-row',...args.p_data};
+    if(args.p_action==='convert_staff')data.employees.find(x=>x.id===args.p_data.employee_id).role='staff';
     if(args.p_action==='clock_in'){row.employee_id=id;row.start_at=new Date().toISOString();row.end_at=null;data.shifts=[row];}
     if(args.p_action==='pause')data.breaks=[{id:'pause',shift_id:'saved-row',start_at:new Date().toISOString(),end_at:null}];
     if(args.p_action==='resume')data.breaks[0].end_at=new Date().toISOString();
@@ -66,4 +67,12 @@ function setup(role='staff'){
  await t.api.handleForm('hr_correct',fd);
  assert.equal(t.calls[0].p_data.end_at,'2001-01-02T14:30:00.000Z','Cairo wall time resolves independently of phone time zone');
 }
-console.log('PASS: raw RPC contract, attendance flow, uncertain/payment retries, staff isolation, payroll submission, Cairo correction time');
+{
+ const t=setup('admin');let creations=0;
+ t.context.fnCall=async()=>{creations++;t.data.employees.push({id:'new-worker',name:'Test',role:'cashier',active:true});return {id:'new-worker'};};
+ await t.api.load();const fd=new FormData();fd.set('name','Test');fd.set('pin','1234');fd.set('hourly_rate','40');fd.set('effective_on','2001-01-01');
+ t.failOnce();await t.api.handleForm('hr_new_staff',fd);await t.api.handleAction('hr_retry');await t.api.handleForm('hr_new_staff',fd);
+ assert.equal(creations,1,'interrupted staff setup never creates a second account');
+ assert.deepEqual(t.calls.map(x=>x.p_action),['convert_staff','convert_staff','set_rate'],'resuming after conversion retry skips a second conversion');
+}
+console.log('PASS: attendance, payroll, retry safety, staff isolation, Cairo time, interrupted employee setup');

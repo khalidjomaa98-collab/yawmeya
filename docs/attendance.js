@@ -252,10 +252,15 @@
       c={name,hourly_rate:amount(fd,'hourly_rate',true),effective_on:getDate(fd,'effective_on'),id:null,converted:false};state.created=c;stored('created',c);
       // create_user has no idempotency contract. Persist intent before the call;
       // an ambiguous response must be reconciled by selecting the existing user.
-      const result=await fnCall({action:'create_user',name,pin});
+      let result;
+      try {result=await fnCall({action:'create_user',name,pin});}
+      catch(err){if(['name','pin','forbidden','wrong','locked'].includes(err?.code)){state.created=null;stored('created',null);}throw err;}
       if(!result?.id)throw new Error('إنشاء الحساب محتاج تأكيد. حدّث البيانات واختار الحساب الموجود.');
       c.id=result.id;stored('created',c);
     } else {if(!c.id)throw new Error('حدّث البيانات واختار الحساب الموجود قبل أي إنشاء جديد.');c.hourly_rate=amount(fd,'hourly_rate',true);c.effective_on=getDate(fd,'effective_on');stored('created',c);}
+    // A retried conversion may already have succeeded on the server. Reconcile
+    // the refreshed profile before attempting another cashier-to-staff change.
+    if(employee(c.id)?.role==='staff')c.converted=true;
     if(!c.converted){await command('convert_staff',{employee_id:c.id});c.converted=true;stored('created',c);}
     await command('set_rate',{employee_id:c.id,effective_on:c.effective_on,hourly_rate:c.hourly_rate});
     state.created=null;stored('created',null);
