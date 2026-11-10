@@ -76,7 +76,7 @@
     d.payrolls=[{id:'demo-payroll',employee_id:emp,period_start:shiftDate(date(t),-7),period_end:shiftDate(date(t),-1),status:'approved',work_minutes:480,gross:280,adjustments:[{kind:'bonus',amount:20,reason:'مكافأة'}],net:300,snapshot:{},approved_at:new Date(t-3600000).toISOString()}];
     d.payments=[{id:'demo-payment',payroll_id:'demo-payroll',amount:100,paid_on:date(t),note:'دفعة أولى'}]; return d;
   }
-  async function load() {
+  async function load({silent=false}={}) {
     synchronizeActor();if(!actor())return false;if(loading)return loading;
     const token=generation, identity=state.actor;
     const job=(async()=>{
@@ -97,7 +97,7 @@
         if(!clock)clock=setInterval(updateClocks,1000);
         return true;
       } catch(err){if(token===generation&&identity===state.actor){state.error=errText(err);state.stale=true;}return false;}
-      finally {if(token===generation){loading=null;if(!state.busy&&typeof softRender==='function')softRender();else redraw();}}
+      finally {if(token===generation){loading=null;if(!silent){if(!state.busy&&typeof softRender==='function')softRender();else redraw();}}}
     })();loading=job; // Promise may resolve synchronously in demo mode; clear on settlement too.
     job.finally(()=>{if(loading===job)loading=null;});return job;
   }
@@ -106,7 +106,19 @@
   function btn(name,label,value='',primary=false,off=false) { return `<button type="button" class="att-btn${primary?' att-primary':''}" data-a="hr_${name}" data-v="${e(value)}" ${off||state.busy?'disabled':''}>${e(label)}</button>`; }
   function submit(label,off=false,local=false) {return `<button class="att-btn att-primary" type="submit" ${off||(local?state.busy:disabled())?'disabled':''}>${state.busy?'جاري التأكيد…':e(label)}</button>`;}
   function form(id,body) { return `<form id="hr_${id}" class="att-form" data-hr-form>${body}</form>`; }
-  function field(label,name,type='text',value='',extra='') {return `<label class="att-field"><span>${e(label)}</span><input name="${name}" type="${type}" value="${e(value)}" ${extra}></label>`;}
+  function dateText(value) {
+    if(!value)return 'اختار التاريخ';
+    const [day,time]=String(value).split('T'),[y,m,d]=day.split('-');
+    return `${d} / ${m} / ${y}${time?' · '+time:''}`;
+  }
+  function field(label,name,type='text',value='',extra='') {
+    const input=`<input aria-label="${e(label)}" name="${name}" type="${type}" value="${e(value)}" ${extra}>`;
+    const content=['date','datetime-local'].includes(type)?`<span class="att-date"><span data-hr-date-label aria-hidden="true">${e(dateText(value))}</span><span aria-hidden="true">▾</span>${input}</span>`:input;
+    return `<label class="att-field"><span>${e(label)}</span>${content}</label>`;
+  }
+  function syncDates() {
+    document.querySelectorAll('.att-date').forEach(w=>{w.querySelector('[data-hr-date-label]').textContent=dateText(w.querySelector('input').value);});
+  }
   function reason(name='reason',label='السبب') {return `<label class="att-field"><span>${e(label)}</span><textarea name="${name}" required maxlength="500" rows="2"></textarea></label>`;}
   function employeeSelect(name='employee_id',selected=state.employee) {return `<label class="att-field"><span>الموظف</span><select name="${name}" required>${roster().map(x=>`<option value="${e(x.id)}" ${x.id===selected?'selected':''}>${e(x.name)}${x.active?'':' (متوقف)'}</option>`).join('')}</select></label>`;}
   function notices() {
@@ -194,6 +206,7 @@
   function getDate(fd,key) {const s=required(fd,key);if(!validDate(s))throw new Error('اختار تاريخ صحيح.');return s;}
   function draftKey(id,fd) {return id+['employee_id','payroll_id','request_id','shift_id'].map(k=>':'+String(fd.get(k)||'')).join('');}
   function keepDraft(event) {
+    if(event.target.matches?.('.att-date input'))syncDates();
     const el=event.target,f=el.form;
     if(!f?.matches('form[data-hr-form]')||!el.name||el.type==='password'||el.type==='hidden')return;
     const key=draftKey(f.id,new FormData(f));
@@ -204,6 +217,7 @@
       const values=state.drafts[draftKey(f.id,new FormData(f))];if(!values)return;
       for(const [name,value] of Object.entries(values)){const el=f.elements.namedItem(name);if(el&&el.type!=='password')el.value=value;}
     });
+    syncDates();
   }
   // Resolve a wall time in Cairo, irrespective of the phone's time zone. Reject
   // DST gaps/folds rather than silently changing the employee's requested time.
@@ -324,7 +338,8 @@
     const f=event.target;if(!f.matches?.('form[data-hr-form]'))return;
     event.preventDefault();event.stopPropagation();if(!f.checkValidity()){f.reportValidity();return;}void handleForm(f.id,new FormData(f));
   },true);
+  document.addEventListener('click',event=>{const el=event.target;if(el.matches?.('.att-date input')&&typeof el.showPicker==='function'){try{el.showPicker();}catch(_){}}});
   document.addEventListener('input',keepDraft);
   document.addEventListener('change',keepDraft);
-  window.Attendance={load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,reset};
+  window.Attendance={signature:()=>JSON.stringify([state.data.settings,...arrays.map(k=>state.data[k])]),load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,reset};
 })();

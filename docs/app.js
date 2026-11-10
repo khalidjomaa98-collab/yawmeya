@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 26; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 27; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -120,7 +120,7 @@ function must(res){ if (res.error) throw res.error; return res.data; }
 
 async function refresh(){
   if (DEMO) return;
-  if (me?.role === 'staff'){ await Attendance.load(); return; }
+  if (me?.role === 'staff'){ await Attendance.load({silent:true}); return; }
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
   const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
@@ -150,7 +150,7 @@ async function refresh(){
   for (const d of extraDays) await fetchDay(d, false);
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
-  await Attendance.load();
+  await Attendance.load({silent:true});
 }
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
@@ -163,7 +163,7 @@ async function fetchDay(d, rerender = true){
 }
 
 // Live updates apply the changed row directly instead of reloading everything.
-let chan = null, rtTimer = null;
+let chan = null, rtTimer = null, hrTimer = null;
 function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
@@ -172,7 +172,7 @@ function subscribe(){
   chan.subscribe();
 }
 function onChange(table, p){
-  if (table.startsWith('hr_')){ Attendance.load().then(softRender).catch(() => {}); return; }
+  if (table.startsWith('hr_')){ clearTimeout(hrTimer); hrTimer=setTimeout(()=>Attendance.load({silent:true}).then(()=>{if(ui.hr||me?.role!=='admin')softRender();}).catch(()=>{}),250); return; }
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
   else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
@@ -184,7 +184,7 @@ function onChange(table, p){
     if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
     else if (!del) upsert(S.notes, mapNote(row));
   }
-  clearTimeout(rtTimer); rtTimer = setTimeout(softRender, 120);
+  clearTimeout(rtTimer); rtTimer = setTimeout(()=>{if(!ui.hr&&me?.role!=='staff')softRender();}, 120);
 }
 function notifyDevice(n){
   if (!document.hidden) return;
@@ -707,8 +707,12 @@ function render(){
   let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
+  const hrSame=view===lastView&&view.startsWith('attendance:');
+  const hrTop=hrSame?window.scrollY:0;
+  const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
   app.innerHTML = h;
   Attendance.restoreForms();
+  if(hrSame){app.querySelectorAll('.att-root details').forEach(d=>{if(hrOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});window.scrollTo(0,hrTop);}
   const sc = document.getElementById('scroller'); if (sc && keepTop) sc.scrollTop = keepTop;
   // whole screen slides in when you move to a different screen
   const entering = view !== lastView; lastView = view;
@@ -777,7 +781,8 @@ async function doLogin(userId, pin){
 }
 const nowIso = () => new Date().toISOString();
 const A = {
-  hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load().then(render).catch(() => {}); },
+  applyUpdate(){ location.reload(); return false; },
+  hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load({silent:true}).then(render).catch(() => {}); },
   hrBack(){ ui.hr = false; ui.modal = null; },
   forgotPin(){ ui.pinUser = null; ui.pin = ''; ui.recovery = 'request'; ui.recoveryError = ''; },
   recoveryBack(){
@@ -1140,7 +1145,12 @@ document.addEventListener('focusout', () => setTimeout(() => { if (!isField(docu
 window.addEventListener('online', () => { ui.offline = false; if (me) refresh().then(render).catch(() => {}); else loadLogin().then(render); });
 window.addEventListener('offline', () => { ui.offline = true; render(); });
 // Catch up on anything missed while the phone was asleep.
-document.addEventListener('visibilitychange', () => { if (!document.hidden && me && !DEMO) refresh().then(softRender).catch(() => {}); });
+let catchingUp=false,lastCatchUp=0;
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden||!me||DEMO||catchingUp||Date.now()-lastCatchUp<5000)return;
+  catchingUp=true;lastCatchUp=Date.now();const before=JSON.stringify(S)+Attendance.signature();
+  try{await refresh();if(before!==JSON.stringify(S)+Attendance.signature())softRender();}catch(_){}finally{catchingUp=false;}
+});
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ui.installEvt = e; render(); });
 sb.auth.onAuthStateChange(evt => { if (evt === 'SIGNED_OUT' && me && !DEMO){ me = null; loadLogin().then(render); } });
 
@@ -1178,12 +1188,12 @@ async function checkUpdate(){
   if (DEMO || ui.recovery) return;
   try {
     const v = (await (await fetch('version.json?t=' + Date.now(), {cache:'no-store'})).json()).v;
-    if (v > APP_VERSION){ if (ui.modal || ui.pinBusy) ui.reloadPending = true; else location.reload(); }
+    if (v > APP_VERSION){ ui.reloadPending = true; if(!document.getElementById('update-ready')){const b=document.createElement('div');b.id='update-ready';b.className='toast';b.innerHTML='تحديث جديد جاهز <button class="tbtn" data-a="applyUpdate">حدّث البرنامج</button>';document.body.appendChild(b);} }
   } catch(e){}
 }
 setInterval(checkUpdate, 3 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
-document.addEventListener('click', () => { if (ui.reloadPending && !ui.modal) location.reload(); }, true);
+// Reload only when the user explicitly chooses the update button.
 
 // Size the owner screen to the part of the phone screen that is really visible (some Android WebViews report a taller one).
 // The keyboard is spotted by the visible area getting much shorter (works even where focus events don't arrive):
@@ -1218,7 +1228,7 @@ sb.auth.onAuthStateChange((event) => {
 });
 (async function boot(){
   checkUpdate();
-  if (DEMO){ demoData(DEMO === 'staff' ? 'cashier' : DEMO); if (DEMO === 'staff'){ me = {...me, role:'staff'}; ui.hr = true; } await Attendance.load(); ui.booting = false; render(); return; }
+  if (DEMO){ demoData(DEMO === 'staff' ? 'cashier' : DEMO); if (DEMO === 'staff'){ me = {...me, role:'staff'}; ui.hr = true; } await Attendance.load({silent:true}); ui.booting = false; render(); return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
     const {data:{session}} = await sb.auth.getSession();

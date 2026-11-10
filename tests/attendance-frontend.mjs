@@ -75,4 +75,11 @@ function setup(role='staff'){
  assert.equal(creations,1,'interrupted staff setup never creates a second account');
  assert.deepEqual(t.calls.map(x=>x.p_action),['convert_staff','convert_staff','set_rate'],'resuming after conversion retry skips a second conversion');
 }
-console.log('PASS: attendance, payroll, retry safety, staff isolation, Cairo time, interrupted employee setup');
+{
+ const t=setup();let paints=0;t.context.render=()=>paints++;
+ await t.api.load({silent:true});assert.equal(paints,0,'background fetch must not repaint the page');
+ const signature=t.api.signature();t.data.server_now=new Date(Date.now()+5000).toISOString();
+ await t.api.load({silent:true});assert.equal(t.api.signature(),signature,'server clock alone is not a data change');
+ await t.api.load();assert.equal(paints,1,'explicit refresh repaints once');
+}
+console.log('PASS: attendance, payroll, retries, isolation, Cairo time, employee setup, silent background updates');
