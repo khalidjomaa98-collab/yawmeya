@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 39; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 40; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -251,6 +251,7 @@ async function fnCall(body){
 function errText(e){
   const m = String(e?.code || e?.message || '');
   if (m.includes('NO_SHOP') || m === 'no_shop') return 'هشام لسه ما حددلكش أنهي محل.';
+  if (String(e?.message||'').includes('CANCEL_REASON_REQUIRED')) return 'اكتب سبب واضح من ٣ إلى ٥٠٠ حرف.';
   if (m.includes('PARTY_REQUIRED')) return 'اكتب الاسم الأول.';
   if (m === 'wrong') return 'الرقم غلط، جرّب تاني.';
   if (m === 'locked') return 'اتكتب رقم غلط كتير. استنى 10 دقايق وجرّب تاني.';
@@ -306,7 +307,7 @@ function band(inner, tall){
       <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=35" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
-        ${themeBtn()}
+        ${me.role!=='staff'?'<button class="ibtn" data-a="globalSearch" aria-label="بحث موحّد">بحث</button>':''}${themeBtn()}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
       ${inner}
     </div></header>
@@ -329,9 +330,9 @@ function item(x, o = {}){
   if (o.shop) sub.push(esc(shop(x.shopId)?.name));
   if (o.who) sub.push(esc(user(x.userId)?.name));
   let end = o.end || '';
-  if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`;
+  if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">إلغاء الحركة</button>`;
   if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
-  const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>` : '';
+  const flag = x.deleted ? `<small class="flag">ملغاة · ألغاها ${esc(user(x.deleted.by)?.name||'—')}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>` : '';
   return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" data-id="${x.id}" data-a="detail" data-v="tx:${x.id}">
     ${avatar(pname(x))}
     <div class="mid"><button class="detail-title" data-a="detail" data-v="tx:${x.id}">${esc(pname(x))}</button><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${x.note ? `<small class="note">${esc(x.note)}</small>` : ''}${flag}</div>
@@ -424,6 +425,7 @@ function renderCashier(){
   const od = openDay(s.id);
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
+  const cancelled=S.txs.filter(t=>t.deleted&&t.userId===me.id&&t.dayId===od?.id);
   const cash = cashOf(od);
   return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
   <main class="wrap cashier-work gut">
@@ -433,7 +435,7 @@ function renderCashier(){
       <button class="act sell" data-a="sell"><span class="ic">${icon.dev}</span>بيع جهاز</button>
     </div>
     ${Attendance.renderWidget()}
-    ${HCashCommerce.returnList(od)}
+    ${HCashCommerce.returnList(od)}${cancelled.length?`<details class="ledger-fold light"><summary>حركات ملغاة اليوم · ${cancelled.length}</summary><ul class="list">${cancelled.map(t=>item(t,{date:true})).join('')}</ul></details>`:''}
     <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length + sales.length}</span></div>
       ${list.length + sales.length ? `<ul class="list">${mixed(list, sales, {mine:true})}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت أو بيع جهاز.</p>`}
     </section>
@@ -532,7 +534,7 @@ function tabTxs(){
           <span class="chev" aria-hidden="true">‹</span></button>
         ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${DRAWER_KEYS.filter(k => isOn(d.shopId, k) || st[k]).map(k => ` · ${dn(k, d.shopId)} <span class="num">${nf(st[k])}</span>`).join('')}${!filtering&&d.accOpening != null && isOn(d.shopId, 'acc') ? ` · رصيد ${dn('acc', d.shopId)} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
           + (list.length + sl.length + rs.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
-            end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
+            end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">إلغاء الحركة</button>`})})),
             ...rs.map(x=>({ts:x.ts,h:()=>HCashCommerce.returnItem(x)})),...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">إلغاء خطأ</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
           : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn dark" data-a="closeDay" data-v="${d.shopId}">قفل اليوم ده</button>`) : ''}</section>`;
     }).join('') : `<p class="empty">مفيش حركات مطابقة للاختيارات.</p>`}
@@ -589,6 +591,7 @@ function sheet(head, body, cls = ''){
     <div class="sh ${cls}">${head}${xBtn}</div><div class="sb">${body}</div></div></div>`;
 }
 function renderModal(){
+  const searchModal=HCashSearch.modal(ui.modal);if(searchModal!==null)return searchModal;
   const m = ui.modal; if (!m) return '';
   const commerce=HCashCommerce.modal(m);if(commerce!==null)return commerce;
   if (m.kind === 'theme'){
@@ -626,14 +629,18 @@ function renderModal(){
       <a class="btn primary wide" href="${KONNASH_OPEN}" data-a="sendOpen">افتح كناش</a>
       <button class="btn took wide" data-a="sendDone">✓ اتسجلت${left > 1 ? '، اللي بعدها' : ''}</button>`);
   }
+  if(m.kind==='restoreTx'){
+    const t=S.txs.find(x=>x.id===m.id);if(!t||me.role!=='admin')return '';
+    return sheet('<h2>إعادة تفعيل الحركة</h2>',`<p>${esc(pname(t))} · ${money(t.amount)}</p><p class="muted small">هترجع تدخل في الرصيد المحسوب، والإلغاء السابق هيفضل محفوظ في سجل التعديلات.</p><form id="restoretxf"><label class="field">سبب إعادة التفعيل<textarea name="reason" required minlength="3" maxlength="500"></textarea></label><p id="ferr" class="err" role="alert"></p><button class="btn primary wide">أكد إعادة التفعيل</button></form>`);
+  }
   if (m.kind === 'del'){
     const x = S.txs.find(t => t.id === m.id), admin = me.role === 'admin';
     if (!x){ ui.modal = null; return ''; }
-    return sheet(`<h2>تمسح الحركة دي؟</h2>`, `<form id="delf">
+    return sheet(`<h2>إلغاء الحركة مع السبب</h2>`, `<form id="delf">
       <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${item(x, {})}</ul>
-      <p class="muted small">${admin ? 'هتتعلّم إنها ممسوحة، وتقدر ترجّعها بعدين.' : 'هتختفي من عندك، بس هشام هيشوف إنك مسحتها.'}</p>
-      <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
-      <button class="btn danger wide">امسح</button></form>`);
+      <p class="muted small">الحركة هتفضل محفوظة كملغاة، وتأثيرها هيتشال من الرصيد المحسوب. ده تصحيح تسجيل، مش رد فلوس فعلي.${x.transferred?' هشام محتاج يشيلها من كناش يدويًا.':''}</p>
+      <div class="field"><label for="d-reason">السبب</label><input id="d-reason" name="reason" required minlength="3" maxlength="500" placeholder="مثلًا: اتسجلت مرتين" autocomplete="off"></div>
+      <p id="ferr" class="err" role="alert"></p><button class="btn danger wide">أكد إلغاء الحركة</button></form>`);
   }
   if (m.kind === 'sell'){
     const sid = m.shopId;
@@ -672,7 +679,7 @@ function renderModal(){
     return sheet(`<h2>تمسح البيعة دي؟</h2>`, `
       <ul class="list" style="box-shadow:none;border:1px solid var(--line)">${saleItem(x, {})}</ul>
       <p class="muted small">الجهاز هيرجع المخزن${x.qty > 1 ? ` (${x.qty})` : ''} والفلوس هتتشال من ${dn(x.pay, x.shopId)}.${me.role !== 'admin' ? ' هشام هيوصله إشعار.' : ''}</p>
-      <button class="btn danger wide" data-a="delSaleOk">امسح</button>`);
+      <button class="btn danger wide" data-a="delSaleOk">إلغاء الحركة</button>`);
   }
   if (m.kind === 'opening'){
     const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId, m.drawer);
@@ -872,7 +879,7 @@ const A = {
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
-    initialLoadGeneration++;extraDays.clear();ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
+    initialLoadGeneration++;extraDays.clear();ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();HCashSearch.reset();Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
@@ -890,16 +897,9 @@ const A = {
     try { navigator.vibrate?.(8); } catch(e){}
     return false;
   },
-  undo(v){
-    const t = S.txs.find(x => x.id === v); if (!t || t.deleted) return false;
-    ui.toast = null;
-    op(() => { t.deleted = {by:me.id, ts:Date.now(), reason:'اتلغت على طول'}; toast('اتلغت'); },
-       async () => { while (t.pending) await new Promise(r => setTimeout(r, 150)); must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:'اتلغت على طول'})); });
-    return false;
-  },
-  del(v){ ui.modal = {kind:'del', id:v}; },
-  restore(v){ const t = S.txs.find(x => x.id === v), was = t.deleted;
-    op(() => { t.deleted = null; t.deleteAck = false; }, async () => must(await sb.from('txs').update({deleted_at:null, deleted_by:null, delete_reason:null, delete_ack:false}).eq('id', v))); return false; },
+  undo(v){ const t=S.txs.find(x=>x.id===v);if(!t||t.deleted||t.pending)return false;ui.toast=null;ui.modal={kind:'del',id:v}; },
+  del(v){ const t=S.txs.find(x=>x.id===v);if(!t||t.deleted||t.pending)return false;ui.modal={kind:'del',id:v}; },
+  restore(v){if(me.role!=='admin')return false;ui.modal={kind:'restoreTx',id:v};},
   themeSheet(){ ui.modal = {kind:'theme'}; },
   setTheme(v, e){
     ui.modal = null;
@@ -1117,9 +1117,14 @@ const F = {
       }, 'الحركة ما اتسجلتش.');
   },
   delf(fd){
-    const t = S.txs.find(x => x.id === ui.modal.id), reason = String(fd.get('reason') || '').trim();
-    op(() => { t.deleted = {by:me.id, ts:Date.now(), reason}; ui.modal = null; toast('اتمسحت'); },
-       async () => must(await sb.rpc('delete_tx', {p_id:t.id, p_reason:reason})), 'ما اتمسحتش.');
+    const t=S.txs.find(x=>x.id===ui.modal.id),reason=String(fd.get('reason')||'').trim();if(!t||reason.length<3||reason.length>500)return formErr('اكتب سبب واضح من ٣ إلى ٥٠٠ حرف.');
+    if(DEMO){t.deleted={by:me.id,ts:Date.now(),reason};ui.modal=null;toast('تمت تجربة الإلغاء؛ البيانات الحقيقية متغيرتش.');render();return;}
+    void act(async()=>must(await sb.rpc('delete_tx',{p_id:t.id,p_reason:reason})),{done:()=>{ui.modal=null;toast('الحركة اتلغت، وأصل التسجيل محفوظ في السجل.');}});
+  },
+  restoretxf(fd){
+    const t=S.txs.find(x=>x.id===ui.modal.id),reason=String(fd.get('reason')||'').trim();if(me.role!=='admin'||!t)return;if(reason.length<3||reason.length>500)return formErr('اكتب سبب واضح من ٣ إلى ٥٠٠ حرف.');
+    if(DEMO){t.deleted=null;ui.modal=null;toast('تمت تجربة إعادة التفعيل.');render();return;}
+    void act(async()=>must(await sb.rpc('hcash_restore_tx',{p_id:t.id,p_reason:reason})),{done:()=>{ui.modal=null;toast('الحركة اتفعّلت، والتغيير محفوظ في السجل.');}});
   },
   wipef(fd){
     if(norm(fd.get('ok'))!==norm('امسح'))return formErr('اكتب كلمة امسح بالظبط.');
@@ -1178,6 +1183,7 @@ const F = {
 };
 
 HCashCommerce.install(A,F);
+HCashSearch.install(A,F);
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;

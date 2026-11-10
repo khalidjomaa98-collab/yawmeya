@@ -1,0 +1,54 @@
+-- No fixture data survives: all ledger, receipt, note and audit writes roll back.
+begin;
+do $test$
+declare owner_id uuid;worker uuid;sid uuid;other_shop uuid;pid uuid:=gen_random_uuid();did uuid:=gen_random_uuid();other_device uuid:=gen_random_uuid();tid uuid:=gen_random_uuid();closed uuid:=gen_random_uuid();
+ doc jsonb;r jsonb;before_cancel timestamptz;before_sum numeric;after_sum numeric;failed boolean;sale uuid:=gen_random_uuid();
+begin
+ select id into owner_id from public.profiles where role='admin' and active order by id limit 1;
+ select id,shop_id into worker,sid from public.profiles where role='cashier' and active and shop_id is not null order by id limit 1;
+ select id into other_shop from public.shops where id<>sid order by id limit 1;
+ if owner_id is null or worker is null or other_shop is null then raise exception 'Missing test fixtures';end if;
+ perform set_config('request.jwt.claim.sub',worker::text,true);
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',worker,'role','authenticated')::text,true);
+ insert into public.parties(id,kind,name,phone) values(pid,'customer','اختبار بَحْث موحد تراجع','01099990000');
+ insert into public.devices(id,shop_id,name,buy_price,sell_price,qty) values(did,sid,'اختبار بحث جهاز تراجع',10,20,5),(other_device,other_shop,'اختبار بحث جهاز تراجع',10,20,5);
+ insert into public.hcash_staff_preferences(user_id,view_cost) values(worker,false) on conflict(user_id) do update set view_cost=false;
+ r:=public.hcash_post_tx(tid,sid,pid,null,'took',100,'اختبار بحث حركة تراجع');
+ perform public.hcash_post_sale(sale,did,1,20,'cashier',null);
+ select coalesce(sum(amount) filter(where type='took'),0)-coalesce(sum(amount) filter(where type='gave'),0) into before_sum from public.txs where day_id=(r->>'day_id')::uuid and deleted_at is null;
+ failed:=false;begin perform public.delete_tx(tid,'');exception when sqlstate '22023' then failed:=sqlerrm='CANCEL_REASON_REQUIRED';end;
+ if not failed then raise exception 'Empty cancellation reason accepted';end if;
+ perform public.delete_tx(tid,'اختبار إلغاء مكرر تراجع');
+ select deleted_at into before_cancel from public.txs where id=tid;
+ perform public.delete_tx(tid,'محاولة إعادة تأكيد تراجع');
+ if not exists(select 1 from public.txs where id=tid and amount=100 and delete_reason='اختبار إلغاء مكرر تراجع' and deleted_at=before_cancel) then raise exception 'Cancellation lost original row or was repeated';end if;
+ select coalesce(sum(amount) filter(where type='took'),0)-coalesce(sum(amount) filter(where type='gave'),0) into after_sum from public.txs where day_id=(r->>'day_id')::uuid and deleted_at is null;
+ if before_sum-after_sum<>100 then raise exception 'Cancellation did not reverse balance once';end if;
+ doc:=public.hcash_search('اختبار بحث');
+ if not exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=sale::text) then raise exception 'Sale search failed';end if;
+ if not exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=tid::text and x->'record'->>'deleted_at' is not null) then raise exception 'Cashier cannot see own cancelled entry';end if;
+ if exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=other_device::text or x->>'kind'='employee' or x->'record' ? 'buy_price') then raise exception 'Search scope or cost privacy failed';end if;
+ doc:=public.hcash_search('01099990000','party');
+ if not exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=pid::text) then raise exception 'Phone search failed';end if;
+ doc:=public.hcash_search('%_','all');
+ if exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id' in (pid::text,did::text)) then raise exception 'Search interpreted wildcard as pattern';end if;
+ failed:=false;begin perform public.hcash_restore_tx(tid,'تراجع');exception when insufficient_privilege then failed:=true;end;
+ if not failed then raise exception 'Cashier restored cancelled entry';end if;
+ perform set_config('request.jwt.claim.sub',owner_id::text,true);
+ update public.txs set transferred_at=clock_timestamp(),delete_ack=true where id=tid;
+ perform public.hcash_restore_tx(tid,'تراجع اختبار إعادة التفعيل');
+ if exists(select 1 from public.txs where id=tid and deleted_at is not null) then raise exception 'Restore failed';end if;
+ if exists(select 1 from public.txs where id=tid and transferred_at is not null) then raise exception 'Konnash acknowledged removal not reset on restore';end if;
+ if not exists(select 1 from public.hr_audit where row_id=tid::text and before_data->>'deleted_at' is not null and after_data->>'delete_reason'='إعادة تفعيل: تراجع اختبار إعادة التفعيل') then raise exception 'Audit history or restore reason lost';end if;
+ -- Historical records outside initial load remain searchable for the owner.
+ insert into public.shop_days(id,shop_id,opened_at,opened_by,closed_at,closed_by) values(closed,sid,'2001-01-01T06:00Z',owner_id,'2001-01-01T18:00Z',owner_id);
+ update public.txs set day_id=closed,day='2001-01-01',ts='2001-01-01T12:00Z' where id=tid;
+ doc:=public.hcash_search('اختبار بحث','all');
+ if not exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=tid::text) then raise exception 'Owner historical search failed';end if;
+ doc:=public.hcash_search('سجل','all',0,'party',pid);
+ if not exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=tid::text) then raise exception 'Scoped customer history failed';end if;
+ perform set_config('request.jwt.claim.sub',worker::text,true);
+ doc:=public.hcash_search('اختبار بحث','all');
+ if exists(select 1 from jsonb_array_elements(doc->'rows') x where x->>'id'=tid::text) then raise exception 'Cashier saw closed-day history';end if;
+end $test$;
+rollback;

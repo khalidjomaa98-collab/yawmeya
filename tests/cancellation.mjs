@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../docs/app.js',import.meta.url),'utf8');
+const actionSource=source.slice(source.indexOf('const A = {'),source.indexOf('HCashCommerce.install(A,F);'))+'\nthis.actions=A;this.forms=F;';
+const calls=[],changes=[];
+const t={id:'tx',amount:100,pending:false,deleted:null};
+const context={me:{id:'owner',role:'admin'},S:{txs:[t]},ui:{modal:{kind:'del',id:'tx'}},DEMO:false,formErr:msg=>changes.push(msg),toast(){},render(){},must:r=>r.data,sb:{async rpc(name,payload){calls.push({name,payload});return {data:null};}},act:async(fn,opts)=>{await fn();opts.done?.();}};
+vm.createContext(context);vm.runInContext(actionSource,context);
+const fd=new FormData();fd.set('reason','');context.forms.delf(fd);assert.equal(calls.length,0,'reason is mandatory before issuing RPC');
+let release;context.sb.rpc=(name,payload)=>{calls.push({name,payload});return new Promise(r=>release=r);};fd.set('reason','اتسجلت مرتين');
+context.forms.delf(fd);assert.equal(calls[0].name,'delete_tx');assert.equal(t.deleted,null,'balance cannot change before server confirmation');release({data:null});await new Promise(setImmediate);
+context.actions.undo('tx');assert.equal(context.ui.modal.kind,'del','quick undo also requires a reason');
+context.me.role='cashier';context.forms.restoretxf(fd);assert.equal(calls.length,1,'only owner can restore');
+console.log('PASS: required reason, server-confirmed cancellation, quick-undo review and restore permission');
