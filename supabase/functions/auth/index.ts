@@ -80,8 +80,23 @@ Deno.serve(async (req) => {
       return json(await session(acc.id, acc.password));
     }
 
-    // owner-only actions below
     const me = await caller(req);
+    if(action==='approve_sale'){
+      if(!me||me.role!=='cashier'||!/^\d{6}$/.test(pin))return json({error:'forbidden'},403);
+      const ownerId=String(body.owner_id??'');
+      const owner=await admin.from('profiles').select('id').eq('id',ownerId).eq('role','admin').eq('active',true).maybeSingle();
+      if(!owner.data)return json({error:'forbidden'},403);
+      const qty=Number(body.qty),price=Number(body.price);
+      if(!Number.isInteger(qty)||qty<1||!Number.isFinite(price)||price<=0)return json({error:'bad_request'},400);
+      const checked=await admin.rpc('auth_check_pin',{p_uid:ownerId,p_pin:pin});
+      if(checked.error)return json({error:'server'},500);
+      if(checked.data==='LOCKED')return json({error:'locked'},429);
+      if(!checked.data)return json({error:'wrong'},401);
+      const approved=await admin.rpc('hcash_approve_sale',{p_owner:ownerId,p_actor:me.id,p_sale:String(body.sale_id??''),p_device:String(body.device_id??''),p_qty:qty,p_price:price});
+      if(approved.error)return json({error:'server'},500);
+      return json({approved:true});
+    }
+    // owner-only actions below
     if (!me || me.role !== "admin") return json({ error: "forbidden" }, 403);
 
     if(action==="wipe"){

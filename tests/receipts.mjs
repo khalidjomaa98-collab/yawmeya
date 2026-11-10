@@ -27,3 +27,8 @@ const rows=Array.from({length:1236},(_,id)=>({id})),offsets=[];
 const result=await context.readPages(()=>({range:async(start,end)=>{offsets.push(start);return {data:rows.slice(start,end+1)};}}));
 assert.equal(result.data.length,1236);assert.deepEqual(offsets,[0,500,1000]);
 console.log('PASS: persisted receipt retry, replay safety, rejection, storage failure, user isolation and batched reads');
+
+{
+ const uncertain=setup(new Map(),{error:{message:'network'}});await uncertain.api.submit('sale',payload,'approval test');
+ const rejected=setup(uncertain.store,{error:{code:'42501',message:'MIN_PRICE_APPROVAL'}});await rejected.api.retry();assert.equal(rejected.api.read(),null,'an expired approval rejects a new insert atomically, so it cannot strand a pending command');
+}

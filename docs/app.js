@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 34; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 35; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -111,9 +111,9 @@ const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
   transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null, dayId:r.day_id});
 const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at), openedBy:r.opened_by, closedAt:r.closed_at ? Date.parse(r.closed_at) : null, closedBy:r.closed_by, opening:r.opening_balance == null ? null : Number(r.opening_balance), accOpening:r.acc_opening == null ? null : Number(r.acc_opening)});
-const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:Number(r.buy_price), sell:Number(r.sell_price), qty:r.qty, archived:!!r.archived});
+const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:r.buy_price==null?null:Number(r.buy_price), minPrice:r.min_price==null?null:Number(r.min_price), sell:Number(r.sell_price), qty:r.qty, archived:!!r.archived});
 const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
-  buy:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
+  cancelReason:r.cancel_reason, deletedAt:r.deleted_at?Date.parse(r.deleted_at):null, deletedBy:r.deleted_by, buy:r.buy_price==null?null:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
 const mapNote = n => ({shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
@@ -123,7 +123,9 @@ async function readPages(make){
 }
 async function refresh(){
   if (DEMO) return;
+  const refreshActor=me?.id;if(!refreshActor)return;
   if (me?.role === 'staff'){ await Attendance.load({silent:true}); return; }
+  await HCashCommerce.load();if(me?.id!==refreshActor)return;
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = ()=>sb.from('txs').select('*').order('ts',{ascending:false}).order('id');
   const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
@@ -133,10 +135,11 @@ async function refresh(){
     readPages(()=>admin ? txq().or(`day.gte.${from},and(transferred_at.is.null,deleted_at.is.null),and(deleted_at.not.is.null,transferred_at.not.is.null,delete_ack.is.false)`) : txq()),
     admin ? sb.from('notes').select('*').order('ts', {ascending:false}).limit(80) : Promise.resolve({data:[]}),
     readPages(()=>admin ? sb.from('shop_days').select('*').or(`closed_at.is.null,opened_at.gte.${from}`).order('opened_at',{ascending:false}).order('id') : sb.from('shop_days').select('*').is('closed_at',null).order('id')),
-    readPages(()=>sb.from('devices').select('*').eq('archived',false).order('name').order('id')),
-    readPages(()=>sb.from('device_sales').select('*').gte('ts',from+'T00:00:00Z').order('ts',{ascending:false}).order('id')),
+    HCashCommerce.pages('hcash_catalog_page'),
+    HCashCommerce.pages('hcash_sales_page'),
     sb.from('shop_drawers').select('*')
   ]);
+  if(me?.id!==refreshActor)return;
   setDrawers(must(drawers));
   S.devices = must(devices).map(mapDev);
   const pendS = S.sales.filter(s => s.pending);
@@ -151,16 +154,17 @@ async function refresh(){
   S.notes = must(notes).map(mapNote);
   S.days = must(days).map(mapDay);
   for (const d of extraDays) await fetchDay(d, false);
+  if(me?.id!==refreshActor)return;
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
   await Attendance.load({silent:true});
-  if(me.role==='admin'&&ui.f.from)await loadHistoryRange(ui.f);
+  if(me?.id===refreshActor&&me.role==='admin'&&ui.f.from)await loadHistoryRange(ui.f);
 }
 async function fetchDay(d, rerender = true){
-  if (DEMO) return;
+  if (DEMO) return;const actor=me?.id;
   extraDays.add(d);
   const list = must(await sb.from('txs').select('*').eq('day', d)).map(mapTx);
-  list.forEach(t => upsert(S.txs, t));
+  if(me?.id!==actor)return;list.forEach(t => upsert(S.txs, t));
   const ids = [...new Set(list.map(t => t.dayId).filter(Boolean))];
   if (ids.length) must(await sb.from('shop_days').select('*').in('id', ids)).map(mapDay).forEach(x => upsert(S.days, x));
   if (rerender) render();
@@ -171,11 +175,12 @@ let chan = null, rtTimer = null, hrTimer = null;
 function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
-  chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'shop_drawers', 'hr_shifts', 'hr_breaks', 'hr_rates', 'hr_requests', 'hr_payrolls', 'hr_payments', 'hr_alerts', 'hr_settings']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  const subscriber=me?.id;chan = sb.channel('yawmeya-live');
+  for (const table of ['hcash_signals','txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'shop_drawers', 'hr_shifts', 'hr_breaks', 'hr_rates', 'hr_requests', 'hr_payrolls', 'hr_payments', 'hr_alerts', 'hr_settings']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => {if(me?.id===subscriber)onChange(table,p);});
   chan.subscribe();
 }
 function onChange(table, p){
+  if(table==='hcash_signals'){HCashCommerce.signal();return;}
   if (table.startsWith('hr_')){ clearTimeout(hrTimer); hrTimer=setTimeout(()=>Attendance.load({silent:true}).then(()=>{if(ui.hr||me?.role!=='admin')softRender();}).catch(()=>{}),250); return; }
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
@@ -225,7 +230,7 @@ async function loadLogin(){
 }
 async function loadMe(uid){
   const r = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
-  if (r.data && r.data.active){ me = r.data;ui.saving=false;ui.saveState='';try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
+  if (r.data && r.data.active){ me = r.data;ui.approvingSale=false;ui.saving=false;ui.saveState='';try{ui.f=JSON.parse(lsGet('history-filters:'+me.id)||'null')||{shop:'all'};}catch(_){} if (me.role !== 'admin') ui.shopId = me.shop_id; await refresh(); subscribe(); registerPush(); }
   else { me = null; await sb.auth.signOut(); }
 }
 async function fnCall(body){
@@ -248,6 +253,9 @@ function errText(e){
   if (m === 'pin') return 'الرقم السري لازم يكون 4 أرقام.';
   if(m==='backup_failed')return 'تعذرت النسخة الاحتياطية، المسح متوقف. جرّب تحديث قائمة النسخ.';
   if (m === 'forbidden') return 'الحركة دي لهشام بس.';
+  if(m.includes('MIN_PRICE_APPROVAL'))return 'السعر محتاج موافقة هشام من جديد. افتح البيع وأكد الموافقة.';
+  if(m.includes('RETURN_LIMIT'))return 'كمية المرتجع أو قيمته أكبر من المتاح في البيعة.';
+  if(m.includes('HAS_RETURN'))return 'البيعة عليها مرتجع؛ إلغاء التسجيل مش متاح.';
   if (m.includes('NO_STOCK')) return 'الكمية دي مش موجودة في المخزن.';
   if (m.includes('VOUCHER')) return 'اكتب رقم البون.';
   if (m.includes('BAD_PAY')) return 'الدرج ده اتقفل. اختار درج تاني.';
@@ -290,7 +298,7 @@ function band(inner, tall){
   const where = me.role === 'admin' ? 'المدير' : me.role === 'staff' ? 'موظف' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
     <header class="band${tall ? ' tall' : ''}"><div class="in gut">
-      <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=32" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
+      <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=35" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
         ${themeBtn()}
@@ -301,8 +309,8 @@ function band(inner, tall){
 }
 // Cash in the drawer: what the owner started the day with, plus أخدت, minus أعطيت.
 // Device sales paid into the cashier drawer add to it too; the accessory drawer has its own start balance.
-const cashOf = d => { if (!d || d.opening == null) return null; const r = totals(dayTxs(d)); return d.opening + r.took - r.gave + saleTot(daySales(d)).cashier; };
-const accOf = d => (!d || d.accOpening == null) ? null : d.accOpening + saleTot(daySales(d)).acc;
+const cashOf = d => { if (!d || d.opening == null) return null; const r = totals(dayTxs(d)); return d.opening + r.took - r.gave + HCashCommerce.dayNet(d).cashier; };
+const accOf = d => (!d || d.accOpening == null) ? null : d.accOpening + HCashCommerce.dayNet(d).acc;
 const lastClosed = (shopId, key, fn) => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x[key] != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? fn(d) : null; };
 const lastClosedCash = (shopId, drawer = 'cashier') => drawer === 'acc' ? lastClosed(shopId, 'accOpening', accOf) : lastClosed(shopId, 'opening', cashOf);
 const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
@@ -319,9 +327,9 @@ function item(x, o = {}){
   if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`;
   if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
   const flag = x.deleted ? `<small class="flag">مسحها ${esc(user(x.deleted.by)?.name)}${x.deleted.reason ? ': ' + esc(x.deleted.reason) : ''}</small>` : '';
-  return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" data-id="${x.id}" ${o.tap ? `data-a="${o.tap}" data-v="${x.id}"` : ''}>
+  return `<li class="item ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''} ${o.tap ? 'tap' : ''}" data-id="${x.id}" data-a="detail" data-v="tx:${x.id}">
     ${avatar(pname(x))}
-    <div class="mid"><b>${esc(pname(x))}</b><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${x.note ? `<small class="note">${esc(x.note)}</small>` : ''}${flag}</div>
+    <div class="mid"><button class="detail-title" data-a="detail" data-v="tx:${x.id}">${esc(pname(x))}</button><small><span class="tag ${x.type}">${T.label}</span> ${sub.join(' · ')}</small>${x.note ? `<small class="note">${esc(x.note)}</small>` : ''}${flag}</div>
     <div class="end"><span class="amt ${x.type}-t">${money(x.amount)}</span>${end}</div></li>`;
 }
 // A device sale row: what was sold, where the money went, and the profit.
@@ -332,29 +340,29 @@ function saleItem(x, o = {}){
   if (o.shop) sub.push(esc(shop(x.shopId)?.name));
   if (o.who) sub.push(esc(user(x.userId)?.name));
   let end = o.end || '';
-  if (o.mine && x.userId === me.id && !x.deleted && !x.pending) end = `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`;
+  if (o.mine && x.userId === me.id && !x.deleted && !x.pending && HCashCommerce.remaining(x)===x.qty) end = `<button class="btn link" data-a="delSale" data-v="${x.id}">إلغاء خطأ</button>`;
   if (x.pending) end = `<small class="muted">بيتحفظ...</small>`;
   const profit = x.qty * (x.price - x.buy);
-  return `<li class="item sale ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''}" data-id="${x.id}">
+  return `<li class="item sale ${x.deleted ? 'del' : ''} ${x.pending ? 'pending' : ''}" data-id="${x.id}" data-a="detail" data-v="sale:${x.id}">
     <span class="av devav" aria-hidden="true">${icon.dev}</span>
-    <div class="mid"><b>${esc(x.name)}${x.qty > 1 ? ` <span class="num muted">× ${x.qty}</span>` : ''}</b>
+    <div class="mid"><button class="detail-title" data-a="detail" data-v="sale:${x.id}">${esc(x.name)}${x.qty > 1 ? ` <span class="num muted">× ${x.qty}</span>` : ''}</button>
       <small><span class="tag pay-${x.pay}">${dn(x.pay, x.shopId)}</span>${x.voucher ? ` بون <span class="num">${esc(x.voucher)}</span> ·` : ''} ${sub.join(' · ')}</small>
-      <small class="note">مكسب <span class="num ${profit < 0 ? 'gave-t' : 'took-t'}">${nf(profit)}</span>${x.qty > 1 ? ` · الواحد <span class="num">${nf(x.price)}</span>` : ''}</small>
-      ${x.deleted ? '<small class="flag">ممسوح، والجهاز رجع المخزن</small>' : ''}</div>
+      ${HCashCommerce.canCost()&&x.buy!=null?`<small class="note">مكسب <span class="num ${profit<0?'gave-t':'took-t'}">${nf(profit)}</span></small>`:''}${HCashCommerce.remaining(x)<x.qty?`<small class="gave-t">عليه مرتجع · ${x.qty-HCashCommerce.remaining(x)} جهاز</small>`:''}
+      ${x.deleted ? '<small class="flag">تسجيل ملغي، والجهاز رجع المخزن</small>' : ''}</div>
     <div class="end"><span class="amt">${money(x.qty * x.price)}</span>${end}</div></li>`;
 }
 // Txs and sales of one list, newest first.
 const mixed = (txs, sales, o) => [...txs.map(x => ({ts:x.ts, h:() => item(x, o)})), ...sales.map(x => ({ts:x.ts, h:() => saleItem(x, o)}))].sort((a, b) => b.ts - a.ts).map(r => r.h()).join('');
-const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? saleTot(daySales(d)).hcash : 0;
+const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? HCashCommerce.dayNet(d).hcash : 0;
   const parts = [isOn(sid, 'acc') && `<span><small>${dn('acc', sid)}</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span>`, isOn(sid, 'hcash') && `<span><small>${dn('hcash', sid)}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
   return parts.length ? `<div class="drawers" style="--n:${parts.length}">${parts.join('')}</div>` : ''; };
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
 /* ---------- screens ---------- */
-const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted">بيحمّل...</p></div></main>`;
+const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted">بيحمّل...</p></div></main>`;
 
 function renderSetup(){
-  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
+  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
     <h1>أول تشغيل: حساب المدير</h1>
     <p class="muted">الحساب ده لهشام. منه هيضيف الكاشيرية ويتابع الحركات.</p>
     <form id="setupf" class="card">
@@ -368,7 +376,7 @@ function renderRecovery(){
   const reset = ui.recovery === 'reset';
   const title = reset ? 'رقم سري جديد لهشام' : 'نسيت الرقم السري';
   const intro = reset ? 'اكتب 6 أرقام جديدة وأكدها. الحركات والحسابات هتفضل محفوظة.' : 'اكتب إيميل الاستعادة المسجل لحساب هشام. هنرسل عليه رابط لتعيين رقم جديد.';
-  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=32" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
+  return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
     <h1>${title}</h1><p class="muted">${intro}</p>
     ${ui.recovery === 'sent' ? '<div class="card"><p role="status">لو الإيميل مسجل، هتوصلك رسالة فيها رابط الاستعادة. راجع البريد المزعج كمان. افتح الرابط في المتصفح على نفس الموبايل أو الكمبيوتر.</p><p class="muted small">لو الرابط انتهت صلاحيته، اطلب رسالة جديدة.</p></div>' : `<form id="${reset ? 'recoverfinishf' : 'recoverrequestf'}" class="card">
       ${reset ? '<div class="field"><label for="rp1">الرقم الجديد</label><input id="rp1" name="pin" type="password" inputmode="numeric" pattern="[0-9٠-٩]{6}" maxlength="6" autocomplete="new-password" required></div><div class="field"><label for="rp2">اكتبه تاني</label><input id="rp2" name="pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" required></div>' : '<div class="field"><label for="recoveremail">إيميل هشام</label><input id="recoveremail" name="email" type="email" dir="ltr" autocomplete="email" required></div>'}
@@ -376,7 +384,7 @@ function renderRecovery(){
     ${ui.recoveryError ? `<p class="err" role="alert">${esc(ui.recoveryError)}</p>` : ''}
     <button class="back" data-a="recoveryBack">→ رجوع للدخول</button></div></main>`;
 }
-const authHeader = () => `<header class="auth-header"><div class="auth-brand"><img src="icons/icon-192.png?v=33" alt=""><span dir="ltr">H-Cash</span></div>${themeBtn()}</header>`;
+const authHeader = () => `<header class="auth-header"><div class="auth-brand"><img src="icons/icon-192.png?v=35" alt=""><span dir="ltr">H-Cash</span></div>${themeBtn()}</header>`;
 const loginRole = u => u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير';
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
@@ -410,14 +418,15 @@ function renderCashier(){
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cash = cashOf(od);
-  return `${band(`<div class="cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
-  <main class="wrap lift gut">
-    ${Attendance.renderWidget()}
+  return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
+  <main class="wrap cashier-work gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
       <button class="act sell" data-a="sell"><span class="ic">${icon.dev}</span>بيع جهاز</button>
     </div>
+    ${Attendance.renderWidget()}
+    ${HCashCommerce.returnList(od)}
     <section><div class="head"><h2>حركات اليوم</h2><span class="muted small num">${list.length + sales.length}</span></div>
       ${list.length + sales.length ? `<ul class="list">${mixed(list, sales, {mine:true})}</ul>` : `<p class="empty">لسه مفيش حركات. اضغط أخدت أو أعطيت أو بيع جهاز.</p>`}
     </section>
@@ -431,9 +440,9 @@ function renderAdmin(){
   const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['dev','الأجهزة',0],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
   const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop);
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
-      <div class="sum"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div class="pair"><span><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></span><span><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></span></div></div>`
+      <div class="sum compact-summary"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div class="pair"><span><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></span><span><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></span></div></div>`
     : ui.tab === 'dev' ? `${shopPills(ui.dshop, 'dshop', true)}
-      <div class="sum"><div><small>أجهزة في المخزن</small><b class="num">${ds.reduce((a, d) => a + d.qty, 0)}</b></div><div><small>قيمتها بسعر الشراء</small><b class="num">${nf(ds.reduce((a, d) => a + d.qty * d.buy, 0))}</b></div></div>`
+      <div class="sum compact-summary"><div><small>أجهزة في المخزن</small><b class="num">${ds.reduce((a, d) => a + d.qty, 0)}</b></div><div><small>قيمتها بسعر الشراء</small><b class="num">${nf(ds.reduce((a, d) => a + d.qty * d.buy, 0))}</b></div></div>`
     : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
     : `<h1>${ui.tab === 'notes' ? 'الإشعارات' : 'الإعدادات'}</h1>`;
   const body = {kenash:tabKenash, dev:tabDev, txs:tabTxs, notes:tabNotes, set:tabSet}[ui.tab]();
@@ -450,13 +459,13 @@ function openDaysCard(){
     if (!d) return `<li class="item"><span class="lockic sm off" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b><small>مفيش يوم مفتوح</small></div>
       <div class="end"><button class="btn sm" data-a="opening" data-v="${sh.id}">ابدأ برصيد</button></div></li>`;
-    const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = saleTot(daySales(d));
+    const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = HCashCommerce.dayNet(d);
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b>
-        <div class="mini3" style="--n:${onKeys(sh.id).length}"><span><small>${dn('cashier', sh.id)}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${isOn(sh.id, 'acc') ? `<span><small>${dn('acc', sh.id)}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${isOn(sh.id, 'hcash') ? `<span><small>${dn('hcash', sh.id)}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
+        <div class="owner-cash"><small>${dn('cashier',sh.id)}</small><strong class="num">${cash==null?'اكتب رصيد البداية':nf(cash)}</strong></div><details class="ledger-fold light" data-keep="drawer-${sh.id}"><summary>تفاصيل الخزنة</summary><div class="mini3" style="--n:${onKeys(sh.id).length}"><span><small>${dn('cashier', sh.id)}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${isOn(sh.id, 'acc') ? `<span><small>${dn('acc', sh.id)}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${isOn(sh.id, 'hcash') ? `<span><small>${dn('hcash', sh.id)}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
         <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small>
-        ${st.count ? `<small>${st.count} جهاز اتباع · مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
-        <div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
+        ${st.count||st.returned ? `<small>${st.count} جهاز اتباع${st.returned?` · مرتجع ${st.returned}`:''} · صافي مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
+        </details><div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
   }).join('')}</ul></section>`;
 }
 function tabKenash(){
@@ -464,7 +473,7 @@ function tabKenash(){
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck);
   const recent = S.txs.filter(t => live(t) && t.transferred && t.transferredAt).sort((a, b) => b.transferredAt - a.transferredAt).slice(0, 6);
   const days = [...new Set(pend.map(t => t.date))];
-  return `${openDaysCard()}
+  return `${HCashCommerce.quickActions()}${openDaysCard()}${S.days.filter(d=>!d.closedAt&&(ui.kshop==='all'||d.shopId===ui.kshop)).map(d=>HCashCommerce.returnList(d)).join('')}
     ${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}" style="box-shadow:var(--shadow)">ابدأ النقل لكناش</button>` : ''}
     ${alerts.length ? `<section><h2 class="gave-t">امسح دول من كناش</h2>
       <ul class="list">${alerts.map(x => item(x, {shop:true, date:true, end:`<button class="btn sm" data-a="ack" data-v="${x.id}">مسحتها</button>`})).join('')}</ul></section>` : ''}
@@ -476,46 +485,48 @@ function tabKenash(){
 // Stock per shop: Hesham adds devices and quantities; sales take them out.
 function tabDev(){
   const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop).sort((a, b) => (b.qty > 0) - (a.qty > 0) || a.name.localeCompare(b.name, 'ar'));
-  const sl = S.sales.filter(s => !s.deleted && (ui.dshop === 'all' || s.shopId === ui.dshop)), st = saleTot(sl.filter(s => dayOf(s.ts) === today()));
+  const sl = S.sales.filter(s => !s.deleted && (ui.dshop === 'all' || s.shopId === ui.dshop)), st = HCashCommerce.net(saleTot(sl.filter(s => dayOf(s.ts) === today())),HCashCommerce.returns.filter(r=>dayOf(r.ts)===today()&&(ui.dshop==='all'||r.shopId===ui.dshop)));
   const recent = [...sl].sort((a, b) => b.ts - a.ts).slice(0, 15);
   return `<button class="btn primary wide" data-a="devNew" style="box-shadow:var(--shadow)">+ ضيف جهاز للمخزن</button>
     ${ds.length ? `<section><h2>المخزن</h2><ul class="list">${ds.map(d => `<li class="item tap" data-a="devEdit" data-v="${d.id}">
       <span class="av devav" aria-hidden="true">${icon.dev}</span>
-      <div class="mid"><b>${esc(d.name)}</b><small>شراء <span class="num">${nf(d.buy)}</span> · بيع <span class="num">${nf(d.sell)}</span>${ui.dshop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</small></div>
+      <div class="mid"><b>${esc(d.name)}</b><small>${ui.dshop==='all'?esc(shop(d.shopId)?.name):'سعر البيع'}</small><div class="device-sale-price">${money(d.sell)}</div>${d.minPrice!=null?`<small>الحد الأدنى ${nf(d.minPrice)}</small>`:''}</div>
       <div class="end"><span class="stock ${d.qty ? '' : 'out'}"><b class="num">${d.qty}</b><small>${d.qty ? 'متاح' : 'خلص'}</small></span></div></li>`).join('')}</ul></section>`
       : `<p class="empty">المخزن فاضي. ضيف أول جهاز.</p>`}
-    ${st.count ? `<section><h2>مبيعات النهارده</h2><div class="kpis3 card"><div><small>اتباع</small><b class="num">${st.count}</b></div><div><small>بفلوس</small><b class="num">${nf(st.total)}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div></div></section>` : ''}
+    ${st.count||st.returned ? `<section><h2>صافي مبيعات النهارده</h2><div class="kpis3 card"><div><small>اتباع</small><b class="num">${st.count}</b></div><div><small>بفلوس</small><b class="num">${nf(st.total)}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div></div></section>` : ''}
     ${recent.length ? `<section><h2>آخر المبيعات</h2><ul class="list">${recent.map(x => saleItem(x, {date:true, shop:ui.dshop === 'all', who:true})).join('')}</ul></section>` : ''}`;
 }
 async function loadHistoryRange(f){
+  const actor=me?.id;
   if(DEMO||!f?.from||!f?.to)return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(f.from)||!/^\d{4}-\d{2}-\d{2}$/.test(f.to)||f.from>f.to||(Date.parse(f.to)-Date.parse(f.from))/86400000>90)return;
   async function pages(query){const all=[];for(let offset=0;offset<10000;offset+=1000){const batch=must(await query().order('id').range(offset,offset+999));all.push(...batch);if(batch.length<1000)break;}return all;}
   const [rawTx,rawSales]=await Promise.all([pages(()=>sb.from('txs').select('*').gte('day',f.from).lte('day',f.to)),pages(()=>sb.from('device_sales').select('*').gte('ts',addDays(f.from,-1)+'T00:00:00Z').lt('ts',addDays(f.to,2)+'T00:00:00Z'))]);
-  const txs=rawTx.map(mapTx),sales=rawSales.map(mapSale);ui.historyLimit=txs.length>=10000||sales.length>=10000;txs.forEach(x=>upsert(S.txs,x));sales.forEach(x=>upsert(S.sales,x));const ids=[...new Set([...txs,...sales].map(x=>x.dayId).filter(Boolean))];
+  if(me?.id!==actor)return;
+  const txs=rawTx.map(mapTx),sales=rawSales.map(mapSale);ui.historyLimit=txs.length>=10000||sales.length>=10000;txs.forEach(x=>upsert(S.txs,x));sales.forEach(x=>upsert(S.sales,x));const ids=[...new Set([...txs,...sales,...HCashCommerce.returns.filter(r=>dayOf(r.ts)>=f.from&&dayOf(r.ts)<=f.to)].map(x=>x.dayId).filter(Boolean))];
   for(let i=0;i<ids.length;i+=100)must(await sb.from('shop_days').select('*').in('id',ids.slice(i,i+100))).map(mapDay).forEach(x=>upsert(S.days,x));
 }
 function tabTxs(){
   const f = ui.f;
-  const matches=(x,sale=false)=> (!f.from||dayOf(x.ts)>=f.from)&&(!f.to||dayOf(x.ts)<=f.to)&&(!f.employee||x.userId===f.employee)&&(!f.type||(sale?f.type==='sale':f.type===x.type))&&(!f.q||norm([sale?x.name:party(x.partyId)?.name,x.note,x.voucher,user(x.userId)?.name].join(' ')).includes(norm(f.q)));
+  const matches=(x,sale=false)=> (!f.from||dayOf(x.ts)>=f.from)&&(!f.to||dayOf(x.ts)<=f.to)&&(!f.employee||x.userId===f.employee)&&(!f.type||(sale?(x.saleId?f.type==='return':f.type==='sale'):f.type===x.type))&&(!f.q||norm([sale?x.name:party(x.partyId)?.name,x.note,x.voucher,user(x.userId)?.name].join(' ')).includes(norm(f.q)));
   const days = S.days.filter(d => f.shop === 'all' || d.shopId === f.shop).sort((a, b) => (a.closedAt ? 1 : 0) - (b.closedAt ? 1 : 0) || b.openedAt - a.openedAt);
   const filtering=!!(f.q||f.type||f.employee||f.from||f.to);
-  const visibleDays=days.filter(d=>!filtering||dayTxs(d).some(x=>matches(x))||S.sales.some(x=>x.dayId===d.id&&matches(x,true)));
-  return `<form id="historyf" class="card history-filters"><h2>بحث في السجل</h2><label class="field">اسم / ملاحظة / رقم بون<input name="q" type="search" value="${esc(f.q||'')}"></label><div class="row2"><label class="field">من<input name="from" type="date" value="${esc(f.from||'')}"></label><label class="field">لحد<input name="to" type="date" value="${esc(f.to||'')}"></label></div><label class="field">الموظف<select name="employee"><option value="">الكل</option>${S.users.filter(u=>u.role!=='staff').map(u=>`<option value="${u.id}" ${f.employee===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label><label class="field">نوع الحركة<select name="type">${[['','الكل'],['took','أخدت'],['gave','أعطيت'],['sale','بيع جهاز']].map(([k,n])=>`<option value="${k}" ${f.type===k?'selected':''}>${n}</option>`).join('')}</select></label><small class="muted">من غير فترة: البحث في الأيام المحملة. اختار فترة لعرض سجل أقدم (حتى ٩٠ يوم).</small><button class="btn primary">اعرض النتائج</button><button type="button" class="btn" data-a="clearHistory">مسح الفلاتر</button></form>${ui.historyLimit?'<p class="err">النتائج كتير؛ ضيّق الفترة عشان تظهر كاملة.</p>':''}${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
+  const visibleDays=days.filter(d=>!filtering||dayTxs(d).some(x=>matches(x))||(S.sales.some(x=>x.dayId===d.id&&matches(x,true))||HCashCommerce.dayReturns(d).some(x=>matches(x,true))));
+  return `<form id="historyf" class="card history-filters"><h2>بحث في السجل</h2><label class="field">اسم / ملاحظة / رقم بون<input name="q" type="search" value="${esc(f.q||'')}"></label><div class="row2"><label class="field">من<input name="from" type="date" value="${esc(f.from||'')}"></label><label class="field">لحد<input name="to" type="date" value="${esc(f.to||'')}"></label></div><label class="field">الموظف<select name="employee"><option value="">الكل</option>${S.users.filter(u=>u.role!=='staff').map(u=>`<option value="${u.id}" ${f.employee===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label><label class="field">نوع الحركة<select name="type">${[['','الكل'],['took','أخدت'],['gave','أعطيت'],['sale','بيع جهاز'],['return','مرتجع جهاز']].map(([k,n])=>`<option value="${k}" ${f.type===k?'selected':''}>${n}</option>`).join('')}</select></label><small class="muted">من غير فترة: البحث في الأيام المحملة. اختار فترة لعرض سجل أقدم (حتى ٩٠ يوم).</small><button class="btn primary">اعرض النتائج</button><button type="button" class="btn" data-a="clearHistory">مسح الفلاتر</button></form>${ui.historyLimit?'<p class="err">النتائج كتير؛ ضيّق الفترة عشان تظهر كاملة.</p>':''}${shopPills(f.shop, 'fshop', true).replace('class="shops"', 'class="shops light"')}
     ${visibleDays.length ? visibleDays.map(d => {
-      const list = dayTxs(d).filter(x=>matches(x)), r = totals(list), sl = S.sales.filter(s => s.dayId === d.id&&matches(s,true)), st = saleTot(sl), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
-      if((f.q||f.type||f.employee||f.from||f.to)&&!list.length&&!sl.length)return '';
+      const list = dayTxs(d).filter(x=>matches(x)), r = totals(list), rs=HCashCommerce.dayReturns(d).filter(x=>matches(x,true)), sl = S.sales.filter(s => s.dayId === d.id&&matches(s,true)), st = HCashCommerce.net(saleTot(sl),rs), open = ui.openDays.has(d.id) || (!d.closedAt && !ui.openDays.has('x' + d.id));
+      if((f.q||f.type||f.employee||f.from||f.to)&&!list.length&&!sl.length&&!rs.length)return '';
       const o = {who:true, admin:true};
       return `<section class="day ${open ? 'open' : ''}">
         <button class="dayrow" data-a="toggleDay" data-v="${d.id}" aria-expanded="${open}">
           <span class="dname"><b>${dayLabel(dayOf(d.openedAt))}${f.shop === 'all' ? ' · ' + esc(shop(d.shopId)?.name) : ''}</b>
-            <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}</small></span>
+            <small>${tm(d.openedAt)} ← ${d.closedAt ? tm(d.closedAt) + (user(d.closedBy) ? ' · قفله ' + esc(user(d.closedBy).name) : '') : '<span class="live">مفتوح دلوقتي</span>'} · ${r.count} حركة${st.count ? ` · ${st.count} جهاز` : ''}${rs.length?` · ${rs.length} مرتجع`:''}</small></span>
           <span class="dtot">${!filtering&&d.opening != null ? `<span class="num">${nf(cashOf(d))}</span>` : ''}<span class="took-t num">+${nf(r.took)}</span><span class="gave-t num">−${nf(r.gave)}</span></span>
           <span class="chev" aria-hidden="true">‹</span></button>
         ${open ? (st.count ? `<div class="daysales">أجهزة: <b class="num">${nf(st.total)}</b> · مكسب <b class="num took-t">${nf(st.profit)}</b>${DRAWER_KEYS.filter(k => isOn(d.shopId, k) || st[k]).map(k => ` · ${dn(k, d.shopId)} <span class="num">${nf(st[k])}</span>`).join('')}${!filtering&&d.accOpening != null && isOn(d.shopId, 'acc') ? ` · رصيد ${dn('acc', d.shopId)} <b class="num">${nf(accOf(d))}</b>` : ''}</div>` : '')
-          + (list.length + sl.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
+          + (list.length + sl.length + rs.length ? `<ul class="list">${[...list.map(x => ({ts:x.ts, h:() => item(x, {...o,
             end:x.deleted ? `<button class="btn link" data-a="restore" data-v="${x.id}">رجّعها</button>` : `<button class="btn link" data-a="del" data-v="${x.id}">امسح</button>`})})),
-            ...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">امسح</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
+            ...rs.map(x=>({ts:x.ts,h:()=>HCashCommerce.returnItem(x)})),...sl.map(x => ({ts:x.ts, h:() => saleItem(x, {...o, end:x.deleted ? '' : `<button class="btn link" data-a="delSale" data-v="${x.id}">إلغاء خطأ</button>`})}))].sort((a, b) => b.ts - a.ts).map(z => z.h()).join('')}</ul>`
           : `<p class="empty">مفيش حركات.</p>`) + (d.closedAt ? '' : `<button class="btn dark" data-a="closeDay" data-v="${d.shopId}">قفل اليوم ده</button>`) : ''}</section>`;
     }).join('') : `<p class="empty">مفيش حركات مطابقة للاختيارات.</p>`}
     <div class="card"><label for="fdate" class="muted small">عايز يوم أقدم؟</label><input type="date" id="fdate" data-c="fdate" max="${today()}"></div>`;
@@ -534,13 +545,13 @@ function tabSet(){
       <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></details>
     <details class="settings-section"><summary><h2>الكاشيرية</h2></summary><ul class="list">${S.users.filter(u => u.role !== 'staff').map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
-        ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
+        ${HCashCommerce.costButton(u)}${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
       <form id="userf" class="card"><h3>ضيف كاشير</h3><div class="row2">
         <div class="field"><label for="nu-name">الاسم</label><input id="nu-name" name="name" autocomplete="off"></div>
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
         <div class="field"><label for="nu-shop">المحل</label><select id="nu-shop" name="shop"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${'' === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
         <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></details>
-    <details class="settings-section"><summary><h2 class="gave-t">مسح كل الحركات</h2></summary><div class="card"><p class="muted small">بيمسح كل الحركات ومبيعات الأجهزة والإشعارات نهائي من المحلين. المخزن بيفضل زي ما هو. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
+    <details class="settings-section"><summary><h2 class="gave-t">مسح كل الحركات</h2></summary><div class="card"><p class="muted small">بيمسح كل الحركات ومبيعات الأجهزة والإشعارات نهائي من المحلين. المرتجعات وبيوعها الأصلية بتفضل محفوظة للمراجعة. المخزن بيفضل زي ما هو. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
       <button class="btn danger" data-a="wipe">امسح كل الحركات</button></div></details>`;
 }
 
@@ -560,18 +571,19 @@ function devOptions(shopId, q){
   const nq = norm(q);
   const list = S.devices.filter(d => d.shopId === shopId && d.qty > 0 && (!nq || norm(d.name).includes(nq))).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   return list.length ? list.map(d => `<li class="item tap" data-a="pickDev" data-v="${d.id}"><span class="av devav" aria-hidden="true">${icon.dev}</span>
-    <div class="mid"><b>${esc(d.name)}</b><small>متاح <span class="num">${d.qty}</span> · شراء <span class="num">${nf(d.buy)}</span></small></div>
+    <div class="mid"><b>${esc(d.name)}</b><small>متاح <span class="num">${d.qty}</span>${HCashCommerce.canCost()?` · شراء <span class="num">${nf(d.buy)}</span>`:''}</small></div>
     <div class="end"><span class="amt">${money(d.sell)}</span></div></li>`).join('')
     : `<li class="empty">${nq ? 'مفيش جهاز بالاسم ده في المخزن.' : 'مفيش أجهزة في مخزن المحل. هشام بيضيفها من قسم الأجهزة.'}</li>`;
 }
 const sellTot = (m, d) => { const p = Number(m.amt || 0), pr = m.qty * (p - d.buy);
-  return `الإجمالي <b class="num">${nf(m.qty * p)}</b> · مكسب <b class="num ${pr < 0 ? 'gave-t' : 'took-t'}">${nf(pr)}</b>`; };
+  return `الإجمالي <b class="num">${nf(m.qty*p)}</b>${HCashCommerce.canCost()?` · مكسب <b class="num ${pr<0?'gave-t':'took-t'}">${nf(pr)}</b>`:''}`; };
 function sheet(head, body, cls = ''){
   return `<div class="overlay" data-a="closeModal"><div class="sheet" data-a="noop" role="dialog" aria-modal="true">
     <div class="sh ${cls}">${head}${xBtn}</div><div class="sb">${body}</div></div></div>`;
 }
 function renderModal(){
   const m = ui.modal; if (!m) return '';
+  const commerce=HCashCommerce.modal(m);if(commerce!==null)return commerce;
   if (m.kind === 'theme'){
     const cur = themePref();
     return sheet(`<h2>شكل البرنامج</h2>`, `<div class="themes" role="radiogroup">${Object.entries(THEMES).map(([k, [l, sub]]) =>
@@ -624,7 +636,7 @@ function renderModal(){
     const d = device(m.deviceId); if (!d){ ui.modal = null; return ''; }
     return sheet(`<h2 class="sht"><span class="ic-s">${icon.dev}</span>${esc(d.name)}</h2>`, `
       ${m.fixed ? '' : `<button type="button" class="back" data-a="sellBack">→ جهاز تاني</button>`}
-      <p class="muted small" style="text-align:center">متاح <span class="num">${d.qty}</span> · سعر الشراء <span class="num">${nf(d.buy)}</span></p>
+      <p class="muted small" style="text-align:center">متاح <span class="num">${d.qty}</span>${HCashCommerce.canCost()?` · سعر الشراء <span class="num">${nf(d.buy)}</span>`:''}</p>
       <p class="pinlbl">سعر البيع${m.qty > 1 ? ' للواحد' : ''}</p>
       <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}" ${k === '⌫' ? 'aria-label="امسح رقم"' : ''}>${k}</button>`).join('')}</div>
@@ -633,7 +645,7 @@ function renderModal(){
       <p class="pinlbl">الفلوس راحت فين؟</p>
       <div class="paygrid" role="radiogroup" style="--n:${onKeys(sid).length}">${onKeys(sid).map(k => [k, dn(k, sid)]).map(([k, l]) => `<button type="button" role="radio" aria-checked="${m.pay === k}" class="${m.pay === k ? 'on' : ''} p-${k}" data-a="pay" data-v="${k}">${l}${k === 'hcash' ? '<small>قسط</small>' : ''}</button>`).join('')}</div>
       ${m.pay === 'hcash' ? `<div class="field"><label for="sv">رقم البون</label><input id="sv" inputmode="numeric" autocomplete="off" value="${esc(m.voucher || '')}" placeholder="اكتب رقم البون"></div>` : ''}
-      <p id="ferr" class="err" role="alert"></p>
+      <div id="sale-policy">${HCashCommerce.pricePolicy(m,d)}</div><p id="ferr" class="err" role="alert"></p>
       <button class="btn primary wide" data-a="saveSale">سجّل البيع</button>`, 'sell');
   }
   if (m.kind === 'dev'){
@@ -643,7 +655,7 @@ function renderModal(){
       <div class="field"><label for="dv-name">اسم الجهاز</label><input id="dv-name" name="name" value="${esc(d?.name || '')}" placeholder="مثلًا: سامسونج A15 128 جيجا" autocomplete="off"></div>
       <div class="row2"><div class="field"><label for="dv-buy">سعر الشراء</label><input id="dv-buy" name="buy" inputmode="decimal" value="${d ? d.buy : ''}" autocomplete="off"></div>
         <div class="field"><label for="dv-sell">سعر البيع</label><input id="dv-sell" name="sell" inputmode="decimal" value="${d ? d.sell : ''}" autocomplete="off"></div></div>
-      <div class="field"><label for="dv-qty">${d ? 'الكمية في المخزن دلوقتي' : 'الكمية'}</label><input id="dv-qty" name="qty" inputmode="numeric" value="${d ? d.qty : '1'}" autocomplete="off"></div>
+      <div class="field"><label for="dv-min">أقل سعر بيع للكاشير · اختياري</label><input id="dv-min" name="min" inputmode="decimal" value="${d?.minPrice??''}" placeholder="أقل منه يحتاج موافقة هشام"><small>سيبه فاضي لو مفيش حد أدنى.</small></div><div class="field"><label for="dv-qty">${d ? 'الكمية في المخزن دلوقتي' : 'الكمية'}</label><input id="dv-qty" name="qty" inputmode="numeric" value="${d ? d.qty : '1'}" autocomplete="off"></div>
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn primary wide">${d ? 'احفظ' : 'ضيف للمخزن'}</button>
       ${d ? `<div class="row2" style="margin-top:4px">${d.qty ? `<button type="button" class="btn" data-a="devSell" data-v="${d.id}">بيع من هنا</button>` : '<span></span>'}<button type="button" class="btn danger" data-a="devDel" data-v="${d.id}">شيله من المخزن</button></div>` : ''}</form>`);
@@ -673,7 +685,7 @@ function renderModal(){
       <div class="lockhero"><span class="lockic">${icon.lock}</span>
         <p>الحركات هتختفي من عند الكاشير ويبدأ يوم جديد. هتفضل عندك في السجل وفي قسم كناش.</p></div>
       ${od.opening != null ? `<div class="kpis3"><div><small>بداية ${dn('cashier', m.shopId)}</small><b class="num">${nf(od.opening)}</b></div><div><small>${dn('cashier', m.shopId)} دلوقتي</small><b class="num">${nf(cashOf(od))}</b></div>${isOn(m.shopId, 'acc') ? `<div><small>${dn('acc', m.shopId)}</small><b class="num">${accOf(od) == null ? '—' : nf(accOf(od))}</b></div>` : ''}</div>` : ''}
-      ${st.count ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div>${isOn(m.shopId, 'hcash') ? `<div><small>${dn('hcash', m.shopId)}</small><b class="num">${nf(st.hcash)}</b></div>` : ''}</div>` : ''}
+      ${st.count||st.returned ? `<div class="kpis3"><div><small>أجهزة اتباعت</small><b class="num">${st.count}</b></div><div><small>مكسب</small><b class="num took-t">${nf(st.profit)}</b></div>${isOn(m.shopId, 'hcash') ? `<div><small>${dn('hcash', m.shopId)}</small><b class="num">${nf(st.hcash)}</b></div>` : ''}</div>` : ''}
       <div class="kpis3"><div><small>حركة</small><b class="num">${r.count}</b></div>
         <div><small>أخدت</small><b class="num took-t">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num gave-t">${nf(r.gave)}</b></div></div>
       <p class="muted small" style="text-align:center">من ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)} لحد دلوقتي${waiting ? ` · ${waiting} لسه ما اتنقلوش لكناش` : ''}</p>
@@ -741,16 +753,17 @@ function render(){
   let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
-  const settingsOpen=view===lastView?[...app.querySelectorAll('.settings-section[open]')].map(d=>d.querySelector('summary')?.textContent):[];
+  const settingsOpen=view===lastView?[...app.querySelectorAll('.settings-section[open],.ledger-fold[open]')].map(d=>d.dataset.keep||d.querySelector('summary')?.textContent):[];
   const hrSame=view===lastView&&view.startsWith('attendance:');
   const hrTop=hrSame?window.scrollY:0;
   const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
   if(me)h+=HCashReceipts.render();
   if(me)h+=`<div class="save-indicator ${ui.saveState||''}" role="status">${ui.offline?'غير متصل · اتأكد من النت قبل التسجيل':ui.saveState==='saving'?'جاري الحفظ…':ui.saveState==='saved'?(DEMO?'تمت التجربة · بدون حفظ':'✓ اتحفظ على السيرفر'):ui.saveState==='uncertain'?'لم يتم تأكيد الحفظ · حدّث وراجع السجل قبل تكرار الحركة':''}</div>`;
   app.innerHTML = h;
+  if(!ui.booting)window.HCashOpening?.ready();
   Attendance.decorateDates();
   Attendance.restoreForms();
-  app.querySelectorAll('.settings-section').forEach(d=>{if(settingsOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});
+  app.querySelectorAll('.settings-section,.ledger-fold').forEach(d=>{if(settingsOpen.includes(d.dataset.keep||d.querySelector('summary')?.textContent))d.open=true;});
   if(hrSame){app.querySelectorAll('.att-root details').forEach(d=>{if(hrOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});window.scrollTo(0,hrTop);}
   const sc = document.getElementById('scroller'); if (sc && keepTop) sc.scrollTop = keepTop;
   // whole screen slides in when you move to a different screen
@@ -850,7 +863,7 @@ const A = {
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
-    HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
+    HCashCommerce.reset();HCashBackups.reset();Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
@@ -864,7 +877,7 @@ const A = {
     if (v === '⌫') a = a.slice(0, -1); else if ((a + v).length <= 9) a = (a + v).replace(/^0+/, '');
     m.amt = a;
     const el = document.querySelector('#amt .num'); if (el){ el.textContent = a ? Number(a).toLocaleString('en-US') : '0'; replay(el.parentNode, 'bump'); }
-    const stot = document.getElementById('stot'), d = m.kind === 'sell' && device(m.deviceId); if (stot && d) stot.innerHTML = sellTot(m, d);
+    const stot = document.getElementById('stot'), d = m.kind === 'sell' && device(m.deviceId); if (stot && d) stot.innerHTML = sellTot(m, d);const policy=document.getElementById('sale-policy');if(policy&&d)policy.innerHTML=HCashCommerce.pricePolicy(m,d);
     try { navigator.vibrate?.(8); } catch(e){}
     return false;
   },
@@ -1128,11 +1141,13 @@ const F = {
     if (!(buy >= 0)) return formErr('اكتب سعر الشراء.');
     if (!(sell >= 0)) return formErr('اكتب سعر البيع.');
     if (!Number.isInteger(qty) || qty < 0) return formErr('الكمية لازم تكون رقم صحيح.');
-    const row = {shop_id:shopId, name, buy_price:buy, sell_price:sell, qty};
-    if (d) op(() => { Object.assign(d, {shopId, name, buy, sell, qty}); ui.modal = null; toast(`${name} اتحفظ`); },
+    const minimum=String(fd.get('min')||'').trim(),minPrice=minimum===''?null:Number(latin(minimum));
+    if(minPrice!==null&&(!Number.isFinite(minPrice)||minPrice<0||minPrice>sell))return formErr('الحد الأدنى لازم يكون من صفر لسعر البيع المقترح.');
+    const row = {shop_id:shopId, name, buy_price:buy, sell_price:sell, min_price:minPrice, qty};
+    if (d) op(() => { Object.assign(d, {shopId, name, buy, sell, minPrice, qty}); ui.modal = null; toast(`${name} اتحفظ`); },
       async () => must(await sb.from('devices').update(row).eq('id', d.id)), 'ما اتحفظش.');
     else { const id = uuid();
-      op(() => { S.devices.push({id, shopId, name, buy, sell, qty, archived:false}); ui.modal = null; toast(`${name} اتضاف للمخزن (${qty})`); },
+      op(() => { S.devices.push({id, shopId, name, buy, sell, minPrice, qty, archived:false}); ui.modal = null; toast(`${name} اتضاف للمخزن (${qty})`); },
         async () => must(await sb.from('devices').insert({id, ...row})), 'ما اتضافش.'); }
   },
   drawersf(fd){
@@ -1151,6 +1166,8 @@ const F = {
        async () => { for (const [s, n] of changes) must(await sb.from('shops').update({name:n}).eq('id', s.id)); });
   }
 };
+
+HCashCommerce.install(A,F);
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
@@ -1223,7 +1240,7 @@ function demoData(role){
   const days = [{id:'d0', shopId:'s1', openedAt:at(y, 9, 0), openedBy:'u1', closedAt:at(y, 23, 40), closedBy:'u1', opening:98000},
     {id:'d1', shopId:'s1', openedAt:at(t, 10, 0), openedBy:'u1', closedAt:null, opening:100000, accOpening:5000}, {id:'d2', shopId:'s2', openedAt:at(t, 10, 30), openedBy:'u2', closedAt:null}];
   txs.forEach(x => x.dayId = x.date === y ? 'd0' : (x.shopId === 's1' ? 'd1' : 'd2'));
-  const dv = (id, shopId, name, buy, sell, qty) => ({id, shopId, name, buy, sell, qty, archived:false});
+  const dv = (id, shopId, name, buy, sell, qty) => ({id, shopId, name, buy, sell, minPrice:Math.max(0,sell-300), qty, archived:false});
   const devices = [dv('v1', 's1', 'سامسونج A15 128 جيجا', 7800, 8500, 4), dv('v2', 's1', 'ريلمي C53', 6900, 7400, 2), dv('v3', 's1', 'آيفون 13 128 جيجا', 24500, 26500, 1),
     dv('v4', 's1', 'شاومي ريدمي 13C', 5600, 6100, 0), dv('v5', 's2', 'أوبو A18', 5200, 5650, 3)];
   const sl = (id, h, m, deviceId, qty, price, pay, voucher = '') => { const d = devices.find(x => x.id === deviceId);
