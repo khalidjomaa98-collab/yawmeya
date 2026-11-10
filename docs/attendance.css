@@ -1,0 +1,38 @@
+/* Scoped HR module. Reuses the parent's light/dark palette and fonts. */
+.att-root{color:var(--ink);font-family:var(--font);min-width:0;text-align:start}
+.att-root *{box-sizing:border-box}
+.att-content{width:min(100%,720px);margin:0 auto;padding:18px max(16px,env(safe-area-inset-right,0px)) max(40px,env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px}
+.att-heading,.att-row,.att-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.att-heading h1{font-size:1.3rem}
+.att-card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.att-card h2{font-size:1.08rem}.att-card h3{font-size:.96rem}
+.att-root p{margin:0;overflow-wrap:anywhere}.att-muted,.att-toolbar small,.att-root small{color:var(--muted);font-size:.86rem}
+.att-btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;min-height:46px;padding:10px 15px;border-radius:12px;cursor:pointer;text-align:center;overflow-wrap:anywhere}
+.att-btn.att-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.att-root button:disabled{opacity:.5;cursor:wait}.att-root :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.att-actions{display:flex;gap:10px;flex-wrap:wrap}.att-actions>*{flex:1;min-width:120px}
+.att-form{display:flex;flex-direction:column;gap:12px;margin:0}.att-form>.att-btn{align-self:stretch}
+.att-field{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:.92rem}
+.att-field input,.att-field select,.att-field textarea{display:block;width:100%;max-width:100%;min-width:0;min-height:46px;border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:10px;padding:10px;font:inherit;font-size:16px}
+.att-field textarea{resize:vertical}.att-field input[type=date],.att-field input[type=datetime-local]{direction:ltr;text-align:start}
+.att-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.att-notice,.att-error{padding:12px 14px;border-radius:12px;font-size:.9rem;overflow-wrap:anywhere}
+.att-notice{background:var(--cs-soft);color:var(--ink)}.att-error{background:var(--gave-soft);color:var(--gave)}
+.att-error .att-btn{margin-top:8px}.att-empty{color:var(--muted);padding:16px 0;text-align:center}
+.att-pill{display:inline-flex;align-items:center;align-self:center;border-radius:999px;background:var(--sunk);color:var(--muted);padding:4px 10px;font-size:.8rem;white-space:nowrap}
+.att-working{background:var(--took-soft);color:var(--took)}.att-away{background:var(--hc-soft);color:var(--hc)}
+.att-clock{font-family:var(--num,var(--font));font-size:2rem;font-variant-numeric:tabular-nums}
+.att-entry{border-top:1px solid var(--line);padding-top:12px;margin-top:2px;display:block;min-width:0}.att-entry>p,.att-entry>form{margin-top:10px}
+.att-entry summary,.att-payroll>summary,.att-sub>summary{min-height:44px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;list-style-position:inside;overflow-wrap:anywhere}
+.att-entry summary>span,.att-payroll>summary>span{min-width:0}.att-entry summary small,.att-payroll small{display:block}.att-sub{margin-top:12px}.att-sub[open]>.att-form{margin-top:12px}
+.att-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:4px;gap:4px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.att-tabs button{font:inherit;font-size:.88rem;font-weight:600;min-height:46px;padding:8px 4px;border:0;border-radius:10px;color:var(--muted);background:transparent;cursor:pointer}.att-tabs button.on{background:var(--accent);color:var(--accent-ink)}
+.att-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.att-kpis>div{background:var(--sunk);border-radius:12px;padding:12px 6px;text-align:center}.att-kpis strong{display:block;font-size:1.6rem}.att-kpis small{display:block}
+.att-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}.att-totals>div{border-radius:12px;padding:12px;background:var(--sunk);min-width:0}.att-totals dt{color:var(--muted);font-size:.85rem}.att-totals dd{margin:4px 0 0;font-weight:700;overflow-wrap:anywhere}
+.att-payroll{border-top:1px solid var(--line);padding-top:8px}.att-payroll>.att-card{margin-top:12px;box-shadow:none;padding:12px}.att-payroll>summary>span:last-child{text-align:end}
+.att-adjustments{border:1px solid var(--line);border-radius:12px;min-width:0;padding:12px}.att-adjustments legend{font-size:.9rem}.att-adjustment{display:grid;grid-template-columns:1fr 1fr;gap:10px}.att-adjustment+.att-adjustment{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.att-adjustment>.att-field:last-child{grid-column:1/-1}
+.att-widget{display:flex;align-items:center;justify-content:space-between;gap:12px;border-radius:16px;background:var(--surface);border:1px solid var(--line);padding:14px 16px}.att-widget>div{min-width:0}.att-widget small{display:block}.att-widget .att-btn{flex-shrink:0}
+.att-tabs{position:sticky;top:0;z-index:5}.att-tabs button,.att-btn{transition:background .16s,transform .16s}.att-btn:active:not(:disabled){transform:scale(.98)}
+@media(prefers-reduced-motion:no-preference){.att-card{animation:fadeUp .22s both}}
+@media(max-width:370px){.att-content{padding-inline:12px}.att-card{padding:12px}.att-grid{grid-template-columns:1fr}.att-tabs{gap:2px}.att-tabs button{font-size:.8rem}.att-widget{align-items:stretch;flex-direction:column}}
+@media(prefers-reduced-motion:reduce){.att-root *{scroll-behavior:auto}}

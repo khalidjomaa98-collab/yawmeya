@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 24; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 25; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -9,7 +9,7 @@ const sb = supabase.createClient(CFG.url, CFG.key, {auth:{persistSession:!DEMO, 
 
 // Same two actions as Konnash: أخدت = came in from the person, أعطيت = given to the person.
 const TYPES = {took:{label:'أخدت', prep:'من', sign:'+'}, gave:{label:'أعطيت', prep:'لـ', sign:'−'}};
-const PIN_LEN = {admin:6, cashier:4};
+const PIN_LEN = {admin:6, cashier:4, staff:4};
 const KONNASH_OPEN = `intent://#Intent;package=${CFG.konnashPackage};S.browser_fallback_url=${encodeURIComponent('https://play.google.com/store/apps/details?id=' + CFG.konnashPackage)};end`;
 const AV_COLORS = ['#2f6fd6', '#0f8f7e', '#8a4fd1', '#d0741c', '#c2416b', '#4b6b8a', '#2d8a3e', '#b8832a'];
 
@@ -120,6 +120,7 @@ function must(res){ if (res.error) throw res.error; return res.data; }
 
 async function refresh(){
   if (DEMO) return;
+  if (me?.role === 'staff'){ await Attendance.load(); return; }
   const admin = me.role === 'admin', t = today(), from = addDays(t, -45);
   const txq = sb.from('txs').select('*').order('ts', {ascending:false}).limit(5000);
   const [shops, users, parties, txs, notes, days, devices, sales, drawers] = await Promise.all([
@@ -149,6 +150,7 @@ async function refresh(){
   for (const d of extraDays) await fetchDay(d, false);
   if (me.role === 'admin'){ if (!shop(ui.shopId)) ui.shopId = S.shops[0]?.id || null; }
   else { me.shop_id = user(me.id)?.shop_id ?? me.shop_id; ui.shopId = me.shop_id; }
+  await Attendance.load();
 }
 async function fetchDay(d, rerender = true){
   if (DEMO) return;
@@ -166,10 +168,11 @@ function subscribe(){
   if (DEMO) return;
   if (chan) sb.removeChannel(chan);
   chan = sb.channel('yawmeya-live');
-  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'shop_drawers']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
+  for (const table of ['txs', 'notes', 'parties', 'shop_days', 'devices', 'device_sales', 'shop_drawers', 'hr_shifts', 'hr_breaks', 'hr_rates', 'hr_requests', 'hr_payrolls', 'hr_payments', 'hr_alerts', 'hr_settings']) chan.on('postgres_changes', {event:'*', schema:'public', table}, p => onChange(table, p));
   chan.subscribe();
 }
 function onChange(table, p){
+  if (table.startsWith('hr_')){ Attendance.load().then(softRender).catch(() => {}); return; }
   const del = p.eventType === 'DELETE', row = p.new, old = p.old;
   if (table === 'txs'){ if (del) S.txs = S.txs.filter(t => t.id !== old.id); else upsert(S.txs, mapTx(row)); }
   else if (table === 'shop_days'){ if (!del) upsert(S.days, mapDay(row)); }
@@ -194,18 +197,21 @@ function softRender(){
   render();
 }
 
-// The owner's phone (Android app) registers with Firebase so notifications arrive even when the app is closed.
-let pushReady = false;
+// Each signed-in Android user registers for their own permitted notifications.
+let pushReady = false, pushToken = null, pushListenersReady = false;
 async function registerPush(){
   const P = window.Capacitor?.Plugins?.PushNotifications;
-  if (pushReady || !CFG.push || DEMO || !isNative() || !P || me?.role !== 'admin') return;
+  if (pushReady || !CFG.push || DEMO || !isNative() || !P || !me) return;
   pushReady = true;
   try {
     let perm = await P.checkPermissions();
     if (perm.receive !== 'granted') perm = await P.requestPermissions();
     if (perm.receive !== 'granted') return;
-    await P.addListener('registration', t => { if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
-    await P.addListener('pushNotificationActionPerformed', () => { if (me?.role === 'admin'){ ui.tab = 'notes'; render(); } });
+    if (!pushListenersReady){
+      await P.addListener('registration', t => { pushToken = t.value; if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
+      await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if (e.notification?.data?.module === 'attendance' || me.role === 'staff') ui.hr = true; else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
+      pushListenersReady = true;
+    }
     await P.register();
   } catch(e){ pushReady = false; }
 }
@@ -260,11 +266,12 @@ async function op(local, remote, failMsg){
 
 /* ---------- pieces ---------- */
 function band(inner, tall){
-  const where = me.role === 'admin' ? 'المدير' : esc(shop(me.shop_id)?.name || 'كاشير');
+  const where = me.role === 'admin' ? 'المدير' : me.role === 'staff' ? 'موظف' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
     <header class="band${tall ? ' tall' : ''}"><div class="in gut">
       <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
+        ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
         ${themeBtn()}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
       ${inner}
@@ -353,7 +360,7 @@ function renderLogin(){
   if (!ui.pinUser){
     return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية<span style="flex:1"></span>${themeBtn()}</div>
       <h1>مين بيسجل دلوقتي؟</h1>
-      ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : 'كاشير'}</small></button>`).join('')}</div>`
+      ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير'}</small></button>`).join('')}</div>`
         : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
       ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}</div></main>`;
   }
@@ -377,6 +384,7 @@ function renderCashier(){
   const cash = cashOf(od);
   return `${band(`<div class="cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small>`, true)}
   <main class="wrap lift gut">
+    ${Attendance.renderWidget()}
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
@@ -484,7 +492,7 @@ function tabSet(){
       ${S.shops.map(sh => `<fieldset class="dshop"><legend>${esc(sh.name)}</legend>${DRAWER_KEYS.map(k => `<div class="drow"><div class="field"><label for="dr_${sh.id}_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${sh.id}_${k}" name="n|${sh.id}|${k}" value="${dn(k, sh.id)}" maxlength="40" autocomplete="off"></div>
         ${k === 'cashier' ? '<span class="dfix">دايمًا شغال</span>' : `<label class="switch"><input type="checkbox" name="on|${sh.id}|${k}" ${isOn(sh.id, k) ? 'checked' : ''} aria-label="${dn(k, sh.id)} شغال في ${esc(sh.name)}"><span></span><small>شغال</small></label>`}</div>`).join('')}</fieldset>`).join('')}
       <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></section>
-    <section><h2>الكاشيرية</h2><ul class="list">${S.users.map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
+    <section><h2>الكاشيرية</h2><ul class="list">${S.users.filter(u => u.role !== 'staff').map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
         ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
       <form id="userf" class="card"><h3>ضيف كاشير</h3><div class="row2">
@@ -691,15 +699,16 @@ const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.
 function render(){
   ui.dirty = false;
   const app = document.getElementById('app');
-  const view = ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
+  const view = me && (ui.hr || me.role === 'staff') ? 'attendance:' + me.role : ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
   const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
   // the owner screen scrolls inside #scroller: keep its place across redraws (a tab change sets ui.scrollTop = 0)
   const oldSc = document.getElementById('scroller'), keepTop = ui.scrollTop ?? (oldSc ? oldSc.scrollTop : 0); ui.scrollTop = null;
   const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
-  let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (me.role === 'admin' ? renderAdmin() : renderCashier());
+  let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   app.innerHTML = h;
+  Attendance.restoreForms();
   const sc = document.getElementById('scroller'); if (sc && keepTop) sc.scrollTop = keepTop;
   // whole screen slides in when you move to a different screen
   const entering = view !== lastView; lastView = view;
@@ -731,7 +740,7 @@ function render(){
   if (ui.modal?.kind === 'send'){ const k = app.querySelector('.kstep'); if (k && lastSendId && lastSendId !== ui.modal.id) k.classList.add('swap'); lastSendId = ui.modal.id; }
   else lastSendId = null;
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
-  if (me?.role === 'admin' && ui.tab === 'notes' && S.notes.some(n => !n.read)){
+  if (me?.role === 'admin' && !ui.hr && ui.tab === 'notes' && S.notes.some(n => !n.read)){
     const ids = S.notes.filter(n => !n.read).map(n => n.id);
     S.notes.forEach(n => n.read = true);
     if (!DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {});
@@ -768,6 +777,8 @@ async function doLogin(userId, pin){
 }
 const nowIso = () => new Date().toISOString();
 const A = {
+  hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load().then(render).catch(() => {}); },
+  hrBack(){ ui.hr = false; ui.modal = null; },
   forgotPin(){ ui.pinUser = null; ui.pin = ''; ui.recovery = 'request'; ui.recoveryError = ''; },
   recoveryBack(){
     ui.recovery = null; ui.recoveryError = ''; ui.pinUser = null;
@@ -789,8 +800,10 @@ const A = {
   logout(){
     if (DEMO){ location.href = location.pathname; return false; }
     if (chan){ sb.removeChannel(chan); chan = null; }
+    const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
+    Attendance.reset(); pushReady = false; ui.hr = false;
     me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
-    sb.auth.signOut().finally(() => loadLogin().then(render));
+    Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
   type(v){ ui.modal = {kind:'tx', type:v, amt:''}; },
@@ -1205,7 +1218,7 @@ sb.auth.onAuthStateChange((event) => {
 });
 (async function boot(){
   checkUpdate();
-  if (DEMO){ demoData(DEMO); ui.booting = false; render(); return; }
+  if (DEMO){ demoData(DEMO === 'staff' ? 'cashier' : DEMO); if (DEMO === 'staff'){ me = {...me, role:'staff'}; ui.hr = true; } await Attendance.load(); ui.booting = false; render(); return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
     const {data:{session}} = await sb.auth.getSession();
