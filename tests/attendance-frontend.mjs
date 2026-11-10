@@ -114,8 +114,8 @@ function setup(role='staff'){
  assert.equal(t.calls[0].p_data.reason,'تسجيل فترة قديمة');
 }
 {
- const t=setup('admin');t.data.shifts=[{id:'old',employee_id:'other',start_at:'2001-01-01T06:00:45.123Z',end_at:'2001-01-01T14:00:45.456Z',change_reason:null,recorded_by:null}];await t.api.load();await t.api.handleAction('hr_edit_shift','old');
- assert.match(t.api.renderAdmin(),/تعديل الوردية/);const fd=new FormData();fd.set('shift_id','old');fd.set('start_at','2001-01-01T08:00:45');fd.set('end_at','2001-01-01T16:00:45');fd.set('reason','تأكيد التسجيل');
+ const t=setup('admin');t.data.shifts=[{id:'old',employee_id:'other',start_at:'2001-01-01T06:00:45.123Z',end_at:'2001-01-01T14:00:00.456Z',change_reason:null,recorded_by:null}];await t.api.load();await t.api.handleAction('hr_edit_shift','old');
+ assert.match(t.api.renderAdmin(),/تعديل الوردية/);const fd=new FormData();fd.set('shift_id','old');fd.set('start_at','2001-01-01T08:00:45');fd.set('end_at','2001-01-01T16:00');fd.set('reason','تأكيد التسجيل');
  await t.api.handleForm('hr_admin_shift',fd);assert.equal(t.calls[0].p_action,'admin_update_shift');assert.equal(t.calls[0].p_data.start_at,t.data.shifts[0].start_at,'unchanged input preserves subsecond server time');assert.equal(t.calls[0].p_data.end_at,t.data.shifts[0].end_at);assert.equal(t.calls[0].p_data.expected_snapshot.shift.id,'old');
 }
 {

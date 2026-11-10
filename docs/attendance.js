@@ -384,7 +384,7 @@
     return run(async()=>{
       if(id==='hr_admin_shift'){
         requireAdmin();const m=state.manual;if(!m)throw new Error('افتح إضافة أو تعديل الوردية الأول.');
-        const unchanged=(value,original)=>original&&value===wall(original)?original:cairoToUTC(value);const start_at=unchanged(required(fd,'start_at'),m.expected?.shift.start_at),endValue=String(fd.get('end_at')||'').trim(),end_at=endValue?unchanged(endValue,m.expected?.shift.end_at):null;
+        const unchanged=(value,original)=>original&&(value.length===16?value+':00':value)===wall(original)?original:cairoToUTC(value);const start_at=unchanged(required(fd,'start_at'),m.expected?.shift.start_at),endValue=String(fd.get('end_at')||'').trim(),end_at=endValue?unchanged(endValue,m.expected?.shift.end_at):null;
         if(Date.parse(start_at)>now()||(end_at&&(Date.parse(end_at)<=Date.parse(start_at)||Date.parse(end_at)>now())))throw new Error('راجع المواعيد: الانصراف بعد الحضور، ومفيش تسجيل في المستقبل.');
         const breaks=[];
         for(const [name,val] of fd.entries()){if(!name.startsWith('break_start_'))continue;const i=name.slice(12),old=m.expected?.breaks.find(x=>x.id===fd.get('break_id_'+i)),a=unchanged(String(val),old?.start_at),b=String(fd.get('break_end_'+i)||'').trim();breaks.push({id:String(fd.get('break_id_'+i)||'')||null,start_at:a,end_at:b?unchanged(b,old?.end_at):null});}
