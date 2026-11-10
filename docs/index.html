@@ -8,8 +8,8 @@
 <script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <meta name="description" content="يومية المحلات: الكاشير بيسجل أخدت وأعطيت، وهشام بينقلها لكناش.">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png?v=33" type="image/png">
-<link rel="apple-touch-icon" href="icons/icon-192.png?v=33">
+<link rel="icon" href="icons/icon-192.png?v=34" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=34">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://srpgxvdbpkinrvklwywx.supabase.co">
@@ -463,18 +463,44 @@ details summary::-webkit-details-marker{display:none}
 .auth-forgot{align-self:center;margin-top:18px;min-height:36px;padding:4px 8px;background:none;border:0;color:var(--accent);font-size:.84rem;font-weight:600}
 @media(max-width:370px){.auth-screen .in{gap:18px}.auth-panel{padding-inline:14px}.auth-intro h1{font-size:1.65rem}.pin-panel{padding:18px}.auth-pin .pad button{height:56px}.auth-pin .in{gap:12px}}
 
+/* One touch language for every control, including controls replaced on render. */
+:where(button,a.btn,summary,[role="button"],.pick>span){-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+:where(button,a.btn,summary,[role="button"]):not(:disabled):not([aria-disabled="true"]){transition:scale 110ms ease-out,filter 110ms ease-out,box-shadow 140ms ease-out,background-color 140ms ease-out,border-color 140ms ease-out}
+:where(button,a.btn,summary,[role="button"]):not(:disabled):not([aria-disabled="true"]):is(:active,.is-pressed){filter:brightness(.9);box-shadow:inset 0 0 0 999px rgba(8,80,65,.075)}
+:where(button,a.btn,summary,[role="button"]):focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+button:disabled,[aria-disabled="true"]{cursor:default}
+.tap-echo{position:fixed;z-index:120;pointer-events:none;box-sizing:border-box;background:currentColor;opacity:0;animation:tapEcho 260ms ease-out both}
+@keyframes tapEcho{0%{opacity:.14}100%{opacity:0}}
+.nav button.on{background:var(--cs-soft);color:var(--accent);border-radius:14px}.att-tabs button.on,.seg button.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent),0 3px 9px rgba(8,80,65,.1)}
+.field:focus-within>label,.att-field:focus-within>span:first-child{color:var(--accent)}
+.settings-section[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px}
+@media(prefers-reduced-motion:no-preference){
+ :where(button,a.btn,summary,[role="button"]):not(:disabled):not([aria-disabled="true"]):is(:active,.is-pressed){scale:.97}
+ .auth-screen .auth-user:is(:active,.is-pressed){scale:.985}
+ .kp button:active,.pad button:active,.act:active,.btn:active,.dayrow:active,.att-btn:active:not(:disabled){transform:none}
+ .nav button,.att-tabs button{transition:scale 110ms ease-out,background-color 150ms ease-out,color 150ms ease-out}
+ .nav button.on svg{animation:navNudge 180ms ease-out}
+ .band.enter .in>*{animation-duration:180ms}.wrap.enter>*{animation-duration:210ms;animation-delay:0ms!important}
+ .login .in.enter>*,.login .in.enter .ubtn{animation-duration:200ms;animation-delay:0ms!important}
+ .overlay .sheet{animation-duration:240ms}.overlay.out .sheet{animation-duration:180ms}
+ .att-notice{animation:fadeUp 170ms ease-out}
+ @keyframes navNudge{50%{transform:translateY(-2px)}}
+}
+@media(prefers-reduced-motion:reduce){.tap-echo{display:none}:where(button,a.btn,summary,[role="button"]){transition:none!important;scale:none!important}}
+
 </style>
-<link rel="stylesheet" href="attendance.css?v=33">
+<link rel="stylesheet" href="attendance.css?v=34">
 </head>
 <body>
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=33"></script>
-<script src="payroll-share.js?v=33"></script>
-<script src="attendance.js?v=33"></script>
-<script src="receipts.js?v=33"></script>
-<script src="backups.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="config.js?v=34"></script>
+<script src="payroll-share.js?v=34"></script>
+<script src="attendance.js?v=34"></script>
+<script src="receipts.js?v=34"></script>
+<script src="backups.js?v=34"></script>
+<script src="feedback.js?v=34"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>

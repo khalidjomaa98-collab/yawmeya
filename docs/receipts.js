@@ -17,7 +17,7 @@ window.HCashReceipts=(()=>{
    localStorage.removeItem(key(actor));
    if(me?.id!==actor)return true;
    if(!response.data._receipt_replayed){if(r.kind==='tx')upsert(S.txs,mapTx(response.data));else upsert(S.sales,mapSale(response.data));}
-   ui.saveState='saved';ui.saving=false;toast(response.data._receipt_replayed?'المحاولة كانت متسجلة قبل كده؛ اتأكدت بدون تكرار.':'اتسجلت واتأكدت من السيرفر.');
+   ui.saveState='saved';ui.saving=false;window.HCashFeedback?.confirmed();toast(response.data._receipt_replayed?'المحاولة كانت متسجلة قبل كده؛ اتأكدت بدون تكرار.':'اتسجلت واتأكدت من السيرفر.');
    try{await refresh();}catch(_){toast('التسجيل اتأكد، لكن تحديث الأرصدة محتاج اتصال.');}render();return true;
   }catch(error){
    if(me?.id!==actor)return false;

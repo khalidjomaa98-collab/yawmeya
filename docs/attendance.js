@@ -290,7 +290,7 @@
     synchronizeActor();if(state.busy)return true;
     if(disabled()){state.notice=demo()?'دي تجربة محلية؛ مفيش حاجة بتتسجل.':'حدّث بيانات الحضور واتأكد من النت الأول.';redraw();return true;}
     state.busy=true;state.notice='';state.error='';const token=generation;setBusy(true);
-    try {await task();if(token!==generation)return true;state.notice=success||'تم التأكيد من السيرفر.';await load();}
+    try {await task();if(token!==generation)return true;window.HCashFeedback?.confirmed();state.notice=success||'تم التأكيد من السيرفر.';await load();}
     catch(err){if(token===generation)state.notice=/[\u0600-\u06ff]/.test(String(err?.message||''))?err.message:errText(err);}
     finally {if(token===generation){state.busy=false;redraw();}}return true;
   }

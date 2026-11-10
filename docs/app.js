@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 33; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 34; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -719,13 +719,7 @@ function confetti(){
   }
   document.body.appendChild(box); setTimeout(() => box.remove(), 1800);
 }
-// touch ripple on buttons
-document.addEventListener('pointerdown', e => {
-  const b = e.target.closest('.act, .btn, .kp button, .pad button, .ubtn, .dayrow'); if (!b || calm()) return;
-  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.2, sp = document.createElement('span');
-  sp.className = 'ripple'; sp.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
-  b.appendChild(sp); setTimeout(() => sp.remove(), 600);
-});
+// Touch/keyboard feedback is delegated to feedback.js and survives screen redraws.
 
 /* ---------- render ---------- */
 let toastTimer;
