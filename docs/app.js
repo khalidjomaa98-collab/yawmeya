@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 27; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 28; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -269,7 +269,7 @@ function band(inner, tall){
   const where = me.role === 'admin' ? 'المدير' : me.role === 'staff' ? 'موظف' : esc(shop(me.shop_id)?.name || 'كاشير');
   return `${DEMO ? '<div class="demo">وضع تجربة: البيانات أمثلة ومش بيتسجل حاجة</div>' : ''}
     <header class="band${tall ? ' tall' : ''}"><div class="in gut">
-      <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where}</small></div>
+      <div class="bar"><div class="who"><b>${esc(me.name)}</b><small>${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
         ${themeBtn()}
@@ -358,7 +358,7 @@ function renderRecovery(){
 function renderLogin(){
   if (ui.needsSetup) return renderSetup();
   if (!ui.pinUser){
-    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية<span style="flex:1"></span>${themeBtn()}</div>
+    return `<main class="login gut"><div class="in"><div class="logo"><i>ي</i>اليومية <span class="version-tag">إصدار ${APP_VERSION}</span><span style="flex:1"></span>${themeBtn()}</div>
       <h1>مين بيسجل دلوقتي؟</h1>
       ${ui.loginUsers.length ? `<div class="ugrid">${ui.loginUsers.map(u => `<button class="ubtn" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}${esc(u.name)}<small>${u.role === 'admin' ? 'المدير' : u.role === 'staff' ? 'موظف' : 'كاشير'}</small></button>`).join('')}</div>`
         : `<p class="muted">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}
@@ -486,22 +486,22 @@ function tabNotes(){
     ${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b><small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
-  return `<section><h2>المحلات</h2><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></section>
-    <section><h2>الأدراج</h2><form id="drawersf" class="card">
-      <p class="muted small">كل محل ليه أدراجه. غيّر الأسامي زي ما تحب، والدرج اللي تقفله هيختفي من المحل ده بس (من عند الكاشير ومن البيع). المبيعات القديمة بتفضل زي ما هي.</p>
+  return `<div class="release-card"><div><b>اليومية</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
+    <details class="settings-section"><summary><h2>الأدراج</h2></summary><form id="drawersf" class="card">
+      <p class="muted small">اختار أسماء الأدراج المتاحة لكل محل. السجل القديم محفوظ.</p>
       ${S.shops.map(sh => `<fieldset class="dshop"><legend>${esc(sh.name)}</legend>${DRAWER_KEYS.map(k => `<div class="drow"><div class="field"><label for="dr_${sh.id}_${k}">${k === 'cashier' ? 'الدرج الأساسي (أخدت وأعطيت)' : k === 'acc' ? 'الدرج التاني' : 'القسط (برقم بون)'}</label><input id="dr_${sh.id}_${k}" name="n|${sh.id}|${k}" value="${dn(k, sh.id)}" maxlength="40" autocomplete="off"></div>
         ${k === 'cashier' ? '<span class="dfix">دايمًا شغال</span>' : `<label class="switch"><input type="checkbox" name="on|${sh.id}|${k}" ${isOn(sh.id, k) ? 'checked' : ''} aria-label="${dn(k, sh.id)} شغال في ${esc(sh.name)}"><span></span><small>شغال</small></label>`}</div>`).join('')}</fieldset>`).join('')}
-      <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></section>
-    <section><h2>الكاشيرية</h2><ul class="list">${S.users.filter(u => u.role !== 'staff').map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
+      <p id="derr" class="err" role="alert"></p><button class="btn">احفظ الأدراج</button></form></details>
+    <details class="settings-section"><summary><h2>الكاشيرية</h2></summary><ul class="list">${S.users.filter(u => u.role !== 'staff').map(u => `<li class="item">${avatar(u.name)}<div class="mid"><b>${esc(u.name)}</b><small>${u.role === 'admin' ? 'المدير' : (u.active ? 'كاشير' : 'موقوف')}</small>${u.role === 'admin' ? '' : `<div style="margin-top:6px"><select data-c="ushop" data-u="${u.id}" aria-label="محل ${esc(u.name)}" style="min-height:40px;padding:6px 10px"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${u.shop_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`}</div>
       <div class="end" style="flex-direction:row;gap:6px"><button class="btn sm" data-a="chPin" data-v="${u.id}">الرقم</button>
         ${u.role !== 'admin' ? `<button class="btn sm" data-a="toggleUser" data-v="${u.id}">${u.active ? 'وقّف' : 'شغّل'}</button>` : ''}</div></li>`).join('')}</ul>
       <form id="userf" class="card"><h3>ضيف كاشير</h3><div class="row2">
         <div class="field"><label for="nu-name">الاسم</label><input id="nu-name" name="name" autocomplete="off"></div>
         <div class="field"><label for="nu-pin">رقم سري 4 أرقام</label><input id="nu-pin" name="pin" inputmode="numeric" maxlength="4" autocomplete="off"></div></div>
         <div class="field"><label for="nu-shop">المحل</label><select id="nu-shop" name="shop"><option value="">اختار المحل</option>${S.shops.map(s => `<option value="${s.id}" ${'' === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></section>
-    <section><h2 class="gave-t">مسح كل الحركات</h2><div class="card"><p class="muted small">بيمسح كل الحركات ومبيعات الأجهزة والإشعارات نهائي من المحلين. المخزن بيفضل زي ما هو. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
-      <button class="btn danger" data-a="wipe">امسح كل الحركات</button></div></section>`;
+        <p class="err" id="uerr" role="alert"></p><button class="btn primary" ${ui.busy ? 'disabled' : ''}>ضيف</button></form></details>
+    <details class="settings-section"><summary><h2 class="gave-t">مسح كل الحركات</h2></summary><div class="card"><p class="muted small">بيمسح كل الحركات ومبيعات الأجهزة والإشعارات نهائي من المحلين. المخزن بيفضل زي ما هو. الأسامي والكاشيرية بيفضلوا زي ما هم.</p>
+      <button class="btn danger" data-a="wipe">امسح كل الحركات</button></div></details>`;
 }
 
 /* ---------- sheets ---------- */
@@ -707,11 +707,13 @@ function render(){
   let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
   if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
+  const settingsOpen=view===lastView?[...app.querySelectorAll('.settings-section[open]')].map(d=>d.querySelector('summary')?.textContent):[];
   const hrSame=view===lastView&&view.startsWith('attendance:');
   const hrTop=hrSame?window.scrollY:0;
   const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
   app.innerHTML = h;
   Attendance.restoreForms();
+  app.querySelectorAll('.settings-section').forEach(d=>{if(settingsOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});
   if(hrSame){app.querySelectorAll('.att-root details').forEach(d=>{if(hrOpen.includes(d.querySelector('summary')?.textContent))d.open=true;});window.scrollTo(0,hrTop);}
   const sc = document.getElementById('scroller'); if (sc && keepTop) sc.scrollTop = keepTop;
   // whole screen slides in when you move to a different screen

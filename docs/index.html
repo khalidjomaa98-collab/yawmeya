@@ -400,15 +400,35 @@ details summary::-webkit-details-marker{display:none}
 @keyframes tap{50%{transform:scale(1.06)}}
 @keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 @keyframes toastIn{from{transform:translate(-50%,20px);opacity:0}}
+
+/* Shared visual system: calm surfaces, clear actions, legible amounts. */
+.version-tag{display:inline-flex;align-items:center;white-space:nowrap;font-size:11px;font-weight:600;line-height:1.6;padding:2px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--sunk);vertical-align:middle}
+.band .version-tag{color:var(--brand-ink);background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.18);margin-inline-start:6px}
+.logo .version-tag{font-family:var(--font);font-size:11px;letter-spacing:0}
+.release-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:20px}
+.release-card small{display:block;color:var(--muted);font-size:.82rem;margin-top:3px}
+.settings-section{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:0 16px}
+.settings-section>summary{cursor:pointer;min-height:62px;display:flex;align-items:center;justify-content:space-between;list-style:none;gap:10px}
+.settings-section>summary:after{content:'＋';color:var(--muted);font-size:20px}.settings-section[open]>summary:after{content:'−'}
+.settings-section>summary::-webkit-details-marker{display:none}.settings-section[open]{padding-bottom:16px}.settings-section .card{box-shadow:none}
+.btn{min-height:46px;border-radius:12px;font-weight:600}.btn.sm{min-height:40px}.btn.primary{box-shadow:0 3px 10px rgba(36,87,179,.13)}
+.card,.list{border:1px solid var(--line);box-shadow:0 2px 8px rgba(20,35,55,.035);border-radius:18px}
+.item{padding-block:16px}.mid small{line-height:1.6}.amt{font-weight:700;letter-spacing:-.3px}
+.cash>b{letter-spacing:-1px}.acts{gap:12px}.act{border-radius:20px}.nav button{transition:background .16s,color .16s}
+.field{gap:7px}.field>label{font-size:.9rem;font-weight:500}.field input,.field select{min-height:48px;border-radius:12px}
+.ubtn{border:1px solid var(--line);border-radius:20px;box-shadow:0 3px 12px rgba(20,35,55,.04)}
+.login h1{margin-bottom:8px}.login .logo{flex-wrap:wrap;gap:10px}
+@media(prefers-reduced-motion:reduce){.nav button{transition:none}}
+
 </style>
-<link rel="stylesheet" href="attendance.css?v=27">
+<link rel="stylesheet" href="attendance.css?v=28">
 </head>
 <body>
 <div id="app"></div>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=27"></script>
-<script src="attendance.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="config.js?v=28"></script>
+<script src="attendance.js?v=28"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>
