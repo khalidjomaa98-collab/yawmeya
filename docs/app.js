@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 42; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 43; // bump with version.json on every release so open apps refresh themselves
 // Append the changes for each release before bumping APP_VERSION.
 const RELEASE_NOTES = [
   {version:41, changes:[
@@ -12,6 +12,11 @@ const RELEASE_NOTES = [
   {version:42, changes:[
     'الرسائل في الرئيسية، مع تنبيه واضح للموظف لما توصله رسالة.',
     'زر الرجوع يقفل النافذة أو يرجّعك داخل التطبيق.'
+  ]},
+  {version:43, changes:[
+    'إخفاء الرسائل من صندوق الوارد وإرجاعها وقت ما تحتاج.',
+    'معاينة الرسالة بتختفي من الرئيسية بعد القراءة.',
+    'تحسين زر الرجوع وخيار إعادة المحاولة لو التحميل اتأخر.'
   ]}
 ];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
@@ -136,8 +141,22 @@ const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:r.buy_price==n
 const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
   cancelReason:r.cancel_reason, deletedAt:r.deleted_at?Date.parse(r.deleted_at):null, deletedBy:r.deleted_by, buy:r.buy_price==null?null:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
 const mapNote = n => ({recipient:n.recipient_id,shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
-const dismissedMessageAlerts = new Set();
 const personalMessages = () => S.notes.filter(n=>me && n.kind==='personal' && n.recipient===me.id);
+const messagePreferenceKey = kind => `hcash-message-${kind}:${DEMO?'demo:':''}${me.id}`;
+function messagePreference(kind){
+  if(!me)return new Set();
+  try{
+    const ids=JSON.parse(lsGet(messagePreferenceKey(kind))||'[]');
+    return new Set(Array.isArray(ids)?ids:[]);
+  }catch(_){return new Set();}
+}
+function saveMessagePreference(kind, ids){
+  lsSet(messagePreferenceKey(kind),JSON.stringify([...ids]));
+}
+function visibleMessages(){
+  const hidden=messagePreference('hidden');
+  return personalMessages().filter(n=>!hidden.has(n.id));
+}
 function receivePersonalMessages(rows){
   for(const row of rows){
     if(!me||row.kind!=='personal'||row.recipient_id!==me.id)continue;
@@ -151,7 +170,8 @@ function receivePersonalMessages(rows){
 function syncMessageAlert(){
   const el=document.getElementById('personal-message-alert');
   if(!el)return;
-  const unread=personalMessages().filter(n=>!n.read&&!dismissedMessageAlerts.has(n.id));
+  const dismissed=messagePreference('dismissed');
+  const unread=visibleMessages().filter(n=>!n.read&&!dismissed.has(n.id));
   const latest=unread[0];
   el.hidden=!latest||ui.initialLoading||ui.booting||!!ui.recovery||['personalInbox','releaseNotes'].includes(ui.modal?.kind);
   if(el.hidden){el.replaceChildren();delete el.dataset.message;return;}
@@ -296,8 +316,17 @@ async function registerPush(){
   } catch(e){ pushReady = false; }
 }
 async function loadLogin(){
-  const [u, n] = await Promise.all([sb.rpc('login_users'), sb.rpc('needs_setup')]);
-  ui.loginUsers = u.data || []; ui.needsSetup = !!n.data;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const [u, n] = await Promise.all([
+      sb.rpc('login_users').abortSignal(controller.signal),
+      sb.rpc('needs_setup').abortSignal(controller.signal)
+    ]);
+    ui.loginError=!!(u.error||n.error);
+    if(!u.error)ui.loginUsers=u.data||[];
+    if(!n.error)ui.needsSetup=!!n.data;
+  }finally{clearTimeout(timer);}
 }
 let initialLoadGeneration=0;
 async function hydrateInitialData(){
@@ -388,7 +417,7 @@ function band(inner, tall){
       <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=35" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
-        ${me.role!=='staff'?'<button class="ibtn" data-a="globalSearch" aria-label="بحث موحّد">بحث</button>':''}${me.role!=='admin'?'<button class="ibtn" data-a="inbox" aria-label="رسائلي">رسائلي'+(S.notes.some(n=>n.recipient===me.id&&!n.read)?' •':'')+'</button>':''}${themeBtn()}
+        ${me.role!=='staff'?'<button class="ibtn" data-a="globalSearch" aria-label="بحث موحّد">بحث</button>':''}${me.role!=='admin'?'<button class="ibtn" data-a="inbox" aria-label="رسائلي">رسائلي'+(visibleMessages().some(n=>!n.read)?' •':'')+'</button>':''}${themeBtn()}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
       ${inner}
     </div></header>
@@ -454,7 +483,7 @@ const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إ
 /* ---------- screens ---------- */
 function renderLoadingData(){return `${band('')}<main class="wrap gut initial-data" aria-busy="${!!ui.initialPending}"><div class="card"><h1>${ui.initialError?'البيانات مش جاهزة':'جاري تجهيز حسابك'}</h1><p class="muted" role="status">${ui.initialError||'اتأكد الدخول. بنحمّل بيانات الشغل…'}</p>${ui.initialError?'<button class="btn primary" data-a="retryData">إعادة تحميل البيانات</button>':'<div class="data-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>'}</div></main>`;}
 
-const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted">بيحمّل...</p></div></main>`;
+const renderBoot = () => `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div><p class="muted boot-status">بيحمّل...</p></div></main>`;
 
 function renderSetup(){
   return `<main class="login gut"><div class="in"><div class="logo"><img class="brand-mark" src="icons/icon-192.png?v=35" alt=""><span dir="ltr" class="brand-word">H-Cash</span></div>
@@ -489,7 +518,7 @@ function renderLogin(){
       <section class="auth-intro"><span class="auth-eyebrow">إدارة شغلك، بكل بساطة</span><h1>أهلًا بيك</h1><p>اختار حسابك عشان تدخل البرنامج.</p></section>
       <section class="auth-panel" aria-label="الحسابات"><div class="auth-section-title"><h2>حسابات الفريق</h2><span>${users.length} حسابات</span></div>
       ${users.length ? `<div class="auth-users">${users.map(u => `<button class="ubtn auth-user ${u.role==='admin'?'is-owner':''}" data-a="pickUser" data-v="${u.id}">${avatar(u.name)}<span class="auth-user-info"><b>${esc(u.name)}</b><small>${loginRole(u)}</small></span><span class="auth-user-arrow" aria-hidden="true">‹</span></button>`).join('')}</div>`
-        : `<p class="empty">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : 'مفيش حسابات لسه.'}</p>`}</section>
+        : `<p class="empty">${ui.offline ? 'مفيش نت. اتأكد من الاتصال.' : ui.loginError ? 'تعذّر تحميل الحسابات.' : 'مفيش حسابات لسه.'}</p>${ui.offline||ui.loginError?'<button class="btn wide" data-a="applyUpdate">إعادة المحاولة</button>':''}`}</section>
       ${ui.installEvt ? `<button class="btn" data-a="install">سطّب البرنامج على الموبايل</button>` : ''}
       <footer class="auth-footer"><span>H-Cash</span><span>إصدار ${APP_VERSION}</span></footer></div></main>`;
   }
@@ -506,20 +535,21 @@ function renderLogin(){
     </section><footer class="auth-footer"><span>H-Cash</span><span>إصدار ${APP_VERSION}</span></footer></div></main>`;
 }
 
-function messageRows(notes, sent=false){
+function messageRows(notes, mode='inbox'){
+  const sent=mode==='sent';
   return notes.map(n=>`<li class="item"><div class="mid message-text">
     ${sent?`<b>إلى ${esc(user(n.recipient)?.name||'الموظف')}</b>`:n.read?'':'<strong class="message-unread">جديدة</strong>'}
     <p>${esc(n.text)}</p><small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}${sent?` · ${n.read?'اتقرت':'لسه ما اتقرتش'}`:''}</small>
-  </div></li>`).join('');
+  </div>${sent?'':`<button class="btn sm" data-a="${mode==='hidden'?'restoreMessage':'hideMessage'}" data-v="${esc(n.id)}">${mode==='hidden'?'إرجاع':'إخفاء'}</button>`}</li>`).join('');
 }
 function dashboardMessages(){
   const manager=me.role==='admin';
-  const notes=manager?S.notes.filter(n=>n.kind==='personal'&&n.recipient):personalMessages();
+  const notes=manager?S.notes.filter(n=>n.kind==='personal'&&n.recipient):visibleMessages();
   const unread=manager?0:notes.filter(n=>!n.read).length;
-  const latest=unread?notes.find(n=>!n.read):notes[0];
+  const latest=manager?notes[0]:notes.find(n=>!n.read);
   return `<section class="card dashboard-messages${unread?' has-unread':''}">
     <div class="head"><h2>${manager?'رسائل الفريق':'رسائلي'}</h2>${unread?`<strong class="message-unread">${unread===1?'رسالة جديدة':`${unread} رسائل جديدة`}</strong>`:''}</div>
-    ${latest?`<p class="message-preview">${manager?`<b>إلى ${esc(user(latest.recipient)?.name||'الموظف')} · </b>`:''}${esc(latest.text)}</p>`:`<p class="muted small">${manager?'ابعت رسالة خاصة لموظف بالاسم.':'مفيش رسائل ليك دلوقتي.'}</p>`}
+    ${latest?`<p class="message-preview">${manager?`<b>إلى ${esc(user(latest.recipient)?.name||'الموظف')} · </b>`:''}${esc(latest.text)}</p>`:`<p class="muted small">${manager?'ابعت رسالة خاصة لموظف بالاسم.':'مفيش رسائل جديدة.'}</p>`}
     <div class="message-actions">${manager?'<button class="btn primary sm" data-a="composeMessage">إرسال لموظف</button><button class="btn sm" data-a="sentMessages">الرسائل المرسلة</button>':`<button class="btn ${unread?'primary ':''}sm" data-a="inbox">${unread?'اقرأ الرسائل':'افتح رسائلي'}</button>`}</div>
   </section>`;
 }
@@ -700,14 +730,16 @@ function renderModal(){
   const m = ui.modal; if (!m) return '';
   const commerce=HCashCommerce.modal(m);if(commerce!==null)return commerce;
   if(m.kind==='personalInbox'){
-    const messages=personalMessages();
+    const messages=visibleMessages();
+    const hidden=messagePreference('hidden');
+    const archived=personalMessages().filter(n=>hidden.has(n.id));
     const permission=!isNative()&&'Notification' in window&&Notification.permission==='default';
     const list=messages.length?`<ul class="list">${messageRows(messages)}</ul>`:'<p class="empty">مفيش رسائل ليك دلوقتي.</p>';
-    return sheet('<h2>رسائلي</h2>',`${permission?'<button class="btn sm" data-a="askNotify">فعّل إشعارات الرسائل</button>':''}${list}`);
+    return sheet('<h2>رسائلي</h2>',`${permission?'<button class="btn sm" data-a="askNotify">فعّل إشعارات الرسائل</button>':''}${list}${archived.length?`<details class="hidden-messages"><summary>الرسائل المخفية (${archived.length})</summary><ul class="list">${messageRows(archived,'hidden')}</ul></details>`:''}`);
   }
   if(m.kind==='sentMessages'&&me.role==='admin'){
     const messages=S.notes.filter(n=>n.kind==='personal'&&n.recipient);
-    return sheet('<h2>الرسائل المرسلة</h2>',messages.length?`<ul class="list">${messageRows(messages,true)}</ul>`:'<p class="empty">مفيش رسائل مرسلة لسه.</p>');
+    return sheet('<h2>الرسائل المرسلة</h2>',messages.length?`<ul class="list">${messageRows(messages,'sent')}</ul>`:'<p class="empty">مفيش رسائل مرسلة لسه.</p>');
   }
   if(m.kind==='releaseNotes'){
     const updates=RELEASE_NOTES.filter(r=>r.version>m.lastSeen&&r.version<=APP_VERSION);
@@ -891,7 +923,7 @@ function offerReleaseNotes(){
   lsSet(key,String(APP_VERSION));
 }
 function syncBrowserBack(){
-  if(isNative()||history.state?.hcashBack)return;
+  if(isNative()||history.state?.hcashBack||navigator.userActivation?.hasBeenActive===false)return;
   const inside=me?.role==='staff'?Attendance.hasStaffBack():me&&(ui.hr||ui.tab!=='kenash');
   if(ui.modal||ui.pinUser||ui.recovery||inside){
     history.pushState({hcashBack:true},'');
@@ -1017,19 +1049,35 @@ const A = {
   composeMessage(){if(me.role!=='admin')return false;ui.modal={kind:'composeMessage'};},
   sentMessages(){if(me.role!=='admin')return false;ui.modal={kind:'sentMessages'};},
   dismissMessageAlert(){
-    personalMessages().filter(n=>!n.read).forEach(n=>dismissedMessageAlerts.add(n.id));
+    if(!me)return false;
+    const dismissed=messagePreference('dismissed');
+    visibleMessages().filter(n=>!n.read).forEach(n=>dismissed.add(n.id));
+    saveMessagePreference('dismissed',dismissed);
     syncMessageAlert();
     return false;
+  },
+  hideMessage(id){
+    if(!personalMessages().some(n=>n.id===id))return false;
+    const hidden=messagePreference('hidden');
+    hidden.add(id);
+    saveMessagePreference('hidden',hidden);
+  },
+  restoreMessage(id){
+    if(!personalMessages().some(n=>n.id===id))return false;
+    const hidden=messagePreference('hidden');
+    hidden.delete(id);
+    saveMessagePreference('hidden',hidden);
   },
   inbox(){
     if(me.role==='admin')return false;
     const actor=me.id;
     ui.modal={kind:'personalInbox'};
-    if(DEMO){personalMessages().forEach(n=>n.read=true);return;}
+    if(DEMO){visibleMessages().forEach(n=>n.read=true);return;}
     void fetchPersonalMessages(actor).then(async rows=>{
       if(me?.id!==actor||ui.modal?.kind!=='personalInbox')return;
       render();
-      const ids=rows.filter(n=>!n.read).map(n=>n.id);
+      const hidden=messagePreference('hidden');
+      const ids=rows.filter(n=>!n.read&&!hidden.has(n.id)).map(n=>n.id);
       if(!ids.length)return;
       const read=await sb.rpc('hcash_read_messages',{p_ids:ids});
       if(me?.id===actor&&!read.error){
@@ -1063,7 +1111,7 @@ const A = {
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
     initialLoadGeneration++;extraDays.clear();ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();HCashSearch.reset();Attendance.reset(); pushReady = false; ui.hr = false;
-    me = null; ui.modal = null; ui.tab='kenash';previousTabs.length=0;dismissedMessageAlerts.clear();
+    me = null; ui.modal = null; ui.tab='kenash';previousTabs.length=0;
     S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
@@ -1423,6 +1471,7 @@ document.addEventListener('input', e => {
 document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn&&!ui.saving&&!ui.busy) fn(new FormData(e.target)); });
 window.addEventListener('hcashback',goBackInApp);
 window.addEventListener('popstate',goBackInApp);
+document.addEventListener('pointerup',syncBrowserBack,true);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && ui.modal)goBackInApp();
   if (!ui.recovery && !me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
@@ -1535,6 +1584,6 @@ sb.auth.onAuthStateChange((event) => {
     }
     if (session) await loadMe(session.user.id);
     if (!me) await loadLogin();
-  } catch(e){ ui.offline = !navigator.onLine; }
+  } catch(e){ ui.offline = !navigator.onLine; if(!me)ui.loginError=true; }
   ui.booting = false; render();
 })();

@@ -6,7 +6,7 @@ const source=readFileSync('docs/app.js','utf8');
 const alert={hidden:true,dataset:{},innerHTML:'',replaceChildren(){this.innerHTML='';}};
 const storage=new Map();
 const context={
-  APP_VERSION:42,DEMO:false,me:{id:'worker',role:'cashier'},S:{notes:[]},ui:{tab:'kenash'},
+  APP_VERSION:43,DEMO:false,me:{id:'worker',role:'cashier'},S:{notes:[]},ui:{tab:'kenash'},
   document:{getElementById:()=>alert},lsGet:key=>storage.get(key),lsSet:(key,value)=>storage.set(key,value),
   upsert(rows,value){const index=rows.findIndex(n=>n.id===value.id);if(index<0)rows.push(value);else rows[index]=value;},
   isNative:()=>true,render(){},Attendance:{backToToday(){}},
@@ -25,6 +25,25 @@ assert.equal(context.S.notes.length,1);
 assert.match(alert.innerHTML,/رسالة جديدة من الإدارة/);
 context.receivePersonalMessages([note('mine','worker',true),note('mine','worker')]);
 assert.equal(alert.hidden,true,'stale push data must not reopen a read notification');
+
+vm.runInContext(source.slice(source.indexOf('  dismissMessageAlert(){'),source.indexOf('  inbox(){')).replace(/^/, 'Object.assign(A,{')+'});',context);
+context.receivePersonalMessages([note('new','worker')]);
+context.A.dismissMessageAlert();
+context.receivePersonalMessages([note('new','worker')]);
+assert.equal(alert.hidden,true,'dismissal survives a repeated push');
+context.receivePersonalMessages([note('second','worker')]);
+assert.equal(alert.hidden,false,'new messages still alert');
+context.A.hideMessage('second');
+context.syncMessageAlert();
+assert.equal(alert.hidden,true);
+assert.equal(vm.runInContext("visibleMessages().some(n=>n.id==='second')",context),false);
+assert.equal(context.S.notes.length,3,'hiding preserves the original message');
+context.A.restoreMessage('second');
+assert.equal(vm.runInContext("visibleMessages().some(n=>n.id==='second')",context),true);
+context.A.hideMessage('second');
+context.me={id:'another-worker',role:'staff'};
+assert.equal(vm.runInContext("messagePreference('hidden').size",context),0);
+context.me={id:'worker',role:'cashier'};
 
 storage.set('hcash-seen-release:worker','41');
 context.offerReleaseNotes();
