@@ -35,7 +35,7 @@ async function accessToken(sa: { client_email: string; private_key: string }) {
   return cached.token;
 }
 
-const TITLES: Record<string, string> = { tx: "حركة جديدة", del: "حركة اتمسحت", close: "يوم اتقفل" };
+const TITLES: Record<string, string> = { tx: "حركة جديدة", del: "حركة ملغاة", close: "يوم اتقفل", personal: "رسالة من الإدارة" };
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
@@ -45,14 +45,23 @@ Deno.serve(async (req) => {
   if (!raw) return json({ skipped: "no FCM_SERVICE_ACCOUNT" });
   const sa = JSON.parse(raw);
   const { text, kind, id } = await req.json();
+  let recipient: string | null = null;
+  let body = text;
+  if (kind === "personal") {
+    const { data: note, error } = await admin.from("notes").select("recipient_id").eq("id", id).eq("kind", "personal").maybeSingle();
+    if (error || !note?.recipient_id) return json({ sent: 0 });
+    recipient = note.recipient_id;
+    body = "افتح H-Cash لقراءة رسالتك";
+  }
   let shiftId = "";
   if(kind === "attendance" && typeof id === "string"){
     const target = await admin.from("notes").select("attendance_shift").eq("id",id).maybeSingle();
     shiftId = target.data?.attendance_shift ?? "";
   }
 
-  const owners = await admin.from("profiles").select("id").eq("role", "admin").eq("active", true);
-  const ids = (owners.data ?? []).map((o) => o.id);
+  const active = admin.from("profiles").select("id").eq("active", true);
+  const targets = await (recipient ? active.eq("id", recipient).in("role", ["cashier", "staff"]) : active.eq("role", "admin"));
+  const ids = (targets.data ?? []).map((o) => o.id);
   if (!ids.length) return json({ sent: 0 });
   const toks = await admin.from("push_tokens").select("token").in("user_id", ids);
   const tokens = (toks.data ?? []).map((t) => t.token);
@@ -66,7 +75,7 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${at}`, "Content-Type": "application/json" },
       body: JSON.stringify({ message: {
         token,
-        notification: { title: TITLES[kind] ?? "H-Cash", body: text },
+        notification: { title: TITLES[kind] ?? "H-Cash", body },
         data: { kind: String(kind ?? ""), id: String(id ?? ""), ...(shiftId ? {module:"attendance",shift_id:shiftId} : {}) },
         android: { priority: "high", notification: { sound: "default", tag: String(id ?? "") } },
       } }),

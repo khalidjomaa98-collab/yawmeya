@@ -73,7 +73,7 @@
 
 /* H-Cash attendance: quiet surfaces, a clear current shift, and compact reviews. */
 .att-root{--att-action:#08765c;--att-action-ink:#fff;--att-soft:#e6f4ee;--att-warn:#805208;--att-warn-bg:#fff3db}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .att-root{--att-action:#66d9b5;--att-action-ink:#082c23;--att-soft:#15382e;--att-warn:#f0c477;--att-warn-bg:#302719}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]) .att-root{--att-action:#66d9b5;--att-action-ink:#082c23;--att-soft:#15382e;--att-warn:#f0c477;--att-warn-bg:#302719}}
 :root[data-theme="dark"] .att-root{--att-action:#66d9b5;--att-action-ink:#082c23;--att-soft:#15382e;--att-warn:#f0c477;--att-warn-bg:#302719}
 .att-root .att-content{gap:18px;max-width:760px;padding-top:18px;padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 .att-root .att-card{border:0;border-radius:20px;padding:22px;gap:16px;box-shadow:none;animation:none}
@@ -130,6 +130,16 @@
 .att-manual-break .att-date{font-variant-numeric:tabular-nums}.att-tools>[data-a="hr_new_shift"]{color:var(--att-action);border-color:var(--att-action);order:2;flex-basis:100%}
 #hr_admin_shift .att-date [data-hr-date-label]{white-space:normal;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .att-root .att-review:has(#hr_admin_shift){scroll-margin-top:68px}
+
+.att-report-table{overflow:auto;border:1px solid var(--line);border-radius:12px}
+.att-report-table table{width:100%;border-collapse:collapse;font-size:.84rem;text-align:start}
+.att-report-table th,.att-report-table td{padding:10px 8px;text-align:start;vertical-align:top;border-bottom:1px solid var(--line);line-height:1.6}
+.att-report-table thead{background:var(--sunk);color:var(--muted)}
+.att-report-table tbody tr:last-child>*{border-bottom:0}
+.att-report-table td span{display:block}
+.att-report-table td span+span{margin-top:5px}
+#period-report{scroll-margin-top:68px}
+.att-team-live .att-kpis{grid-template-columns:1fr}
 @media(max-width:440px){.att-root .att-card{padding:18px}.att-person{flex-wrap:wrap}.att-person-time{margin-inline-start:52px;margin-top:-6px}.att-root .att-tabs-three button{font-size:.84rem}.att-view-heading{align-items:flex-start}}
 @media(max-width:350px){.att-root .att-content{padding-inline:12px}.att-root .att-card{padding:15px}.att-root .att-tools .att-btn{font-size:.78rem;padding-inline:9px}.att-tools{align-items:flex-start}.att-root .att-clock{font-size:2.15rem}}
 @media(prefers-reduced-motion:reduce){.att-root .att-btn,.att-root .att-tabs button{transition:none}.att-root .att-btn:active:not(:disabled){transform:none}}

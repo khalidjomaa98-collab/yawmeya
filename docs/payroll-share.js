@@ -11,6 +11,14 @@ window.PayrollShare = {
       [`أجر الساعات: ${n(payroll.gross)} ج.م`]];
     for(const a of payroll.adjustments||[])lines.push([`${({bonus:'مكافأة',deduction:'خصم',advance:'سلفة'})[a.kind]||a.kind}: ${n(a.amount)} ج.م · ${a.reason}`]);
     lines.push([`صافي المرتب: ${n(payroll.net)} ج.م`,true]);
+    const days=window.Attendance?.dailyRows(payroll)||[];
+    if(days.length)lines.push(['الحضور والانصراف حسب اليوم',true]);
+    for(const day of days){
+      lines.push([`${day.day} · ${n(day.minutes/60)} ساعة`,true]);
+      for(const interval of day.intervals)lines.push([`الحضور ${interval.start} · الانصراف ${interval.end}`]);
+    }
+    if(payroll.snapshot?.open_shifts)lines.push(['في وردية مفتوحة. وقتها محسوب حتى عرض الكشف.']);
+    if(payroll.snapshot?.pending_corrections)lines.push(['في طلب تعديل انصراف تحت المراجعة.']);
     if(payroll.status==='approved'){
       lines.push([`المدفوع: ${n(paid)} ج.م`,true],[`المتبقي: ${n(Number(payroll.net)-paid)} ج.م`,true],['الدفعات المسجلة']);
       for(const p of payments)lines.push([`${p.paid_on} · ${n(p.amount)} ج.م · ${p.note||'دفعة مرتب'}`]);

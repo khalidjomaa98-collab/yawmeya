@@ -30,9 +30,9 @@ function setup(role='staff'){
  await t.api.handleAction('hr_clock_in');
  assert.equal(t.calls.length,1);assert.match(t.api.renderStaff(),/شغال دلوقتي/);
  assert.doesNotMatch(t.api.renderStaff(),/في طلب لسه محتاج تأكيد/,'raw RPC row is confirmed');
- await t.api.handleAction('hr_pause');assert.match(t.api.renderStaff(),/رجعت للشغل/);
- await t.api.handleAction('hr_resume');await t.api.handleAction('hr_clock_out');
- assert.match(t.api.renderStaff(),/سجّل حضور/);assert.equal(t.calls.length,4);
+ assert.doesNotMatch(t.api.renderStaff(),/data-a="hr_(pause|resume)"/);
+ await t.api.handleAction('hr_pause');await t.api.handleAction('hr_clock_out');
+ assert.match(t.api.renderStaff(),/سجّل حضور/);assert.equal(t.calls.length,2);
 }
 {
  const t=setup();await t.api.load();t.failOnce();
@@ -54,6 +54,22 @@ function setup(role='staff'){
  await t.api.handleForm('hr_payroll',fd);
  assert.equal(t.calls[0].p_action,'create_payroll');assert.equal(t.calls[0].p_data.adjustments[0].amount,25);
  assert.doesNotMatch(t.api.renderAdmin(),/في طلب لسه محتاج تأكيد/);
+}
+{
+ const t=setup('admin');await t.api.load();
+ const rpc=t.context.sb.rpc;
+ t.context.sb.rpc=(name,args)=>name==='hr_period_report'?Promise.resolve({data:{
+   employee_id:args.p_employee,period_start:args.p_start,period_end:args.p_end,
+   work_minutes:120,net:100,adjustments:[],snapshot:{segments:[
+     {day:'2001-01-01',start_at:'2001-01-01T08:00:00Z',end_at:'2001-01-01T10:00:00Z',work_minutes:120}
+   ]}
+ },error:null}):rpc(name,args);
+ const fd=new FormData();fd.set('employee_id','other');fd.set('period_start','2001-01-01');fd.set('period_end','2001-01-02');
+ await t.api.handleAction('hr_tab','payroll');await t.api.handleForm('hr_period_report',fd);
+ assert.equal(t.calls.length,0,'viewing a period does not create a payroll');
+ assert.match(t.api.renderAdmin(),/<th>الحضور<\/th><th>الانصراف<\/th><th>الساعات<\/th>/);
+ assert.match(t.api.renderAdmin(),/100.00 ج.م/);
+ await t.api.handleAction('hr_save_period_report');assert.equal(t.calls[0].p_action,'create_payroll');
 }
 {
  const t=setup('admin');t.data.payrolls=[{id:'pay-1',employee_id:'employee-1',status:'approved',net:1000}];await t.api.load();

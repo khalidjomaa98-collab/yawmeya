@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 40; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 41; // bump with version.json on every release so open apps refresh themselves
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -55,16 +55,20 @@ icon.auto = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 icon.light = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>';
 icon.dark = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>';
 
-// Day / night look: 'auto' follows the phone, 'light' and 'dark' are fixed. Saved on this phone only.
-const THEMES = {auto:['تلقائي', 'زي الموبايل'], light:['نهاري', 'فاتح'], dark:['ليلي', 'غامق']};
-const themePref = () => { const t = lsGet('yawmeya-theme'); return THEMES[t] ? t : 'auto'; };
+icon.glass = '<span class="glass-icon" aria-hidden="true"></span>';
+
+// Only the automatic theme follows the phone. The preference is local to this device.
+const THEMES = {auto:['تلقائي', 'زي الموبايل'], light:['نهاري', 'فاتح'], dark:['ليلي', 'غامق'], glass:['جلاس', 'زجاجي فاتح']};
+const themePref = () => {
+  const stored = lsGet('yawmeya-theme');
+  return Object.hasOwn(THEMES, stored) ? stored : 'auto';
+};
 const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
 function applyTheme(t){
   const r = document.documentElement;
   if (t === 'auto') r.removeAttribute('data-theme'); else r.dataset.theme = t;
   lsSet('yawmeya-theme', t);
-  const dark = t === 'dark' || (t === 'auto' && darkMQ.matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#102a35' : '#102a35');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', t === 'glass' ? '#12484d' : '#102a35');
 }
 const themeBtn = () => `<button class="ibtn thbtn" data-a="themeSheet" aria-label="شكل البرنامج: ${THEMES[themePref()][0]}">${icon[themePref()]}</button>`;
 const TAB_ORDER = ['kenash', 'dev', 'txs', 'notes', 'set'];
@@ -80,6 +84,10 @@ const payName = (k, sid) => drw(sid, k).name;
 const dn = (k, sid) => esc(payName(k, sid));
 const isOn = (sid, k) => k === 'cashier' || !!drw(sid, k).active;
 const onKeys = sid => DRAWER_KEYS.filter(k => isOn(sid, k));
+function txDrawerField(sid){
+  if(DRW[sid]?.acc?.active!==true)return '<input type="hidden" name="drawer" value="cashier">';
+  return '<label class="field">الدرج<select name="drawer"><option value="cashier">'+dn('cashier',sid)+'</option><option value="acc">'+dn('acc',sid)+'</option></select></label>';
+}
 function setDrawers(rows){ (rows || []).forEach(r => { if (DRAWER_DEF[r.key]) (DRW[r.shop_id] ||= {})[r.key] = {name:r.name, active:r.key === 'cashier' || !!r.active}; }); }
 
 /* ---------- state ---------- */
@@ -107,14 +115,14 @@ const upsert = (arr, row) => { const i = arr.findIndex(x => x.id === row.id); if
 
 /* ---------- data ---------- */
 const mapTx = r => ({id:r.id, ts:Date.parse(r.ts), date:r.day, shopId:r.shop_id, userId:r.user_id, type:r.type, partyId:r.party_id,
-  amount:Number(r.amount), note:r.note || '', afterClose:r.after_close, deleteAck:r.delete_ack,
+  amount:Number(r.amount), drawer:r.drawer||'cashier', note:r.note || '', afterClose:r.after_close, deleteAck:r.delete_ack,
   deleted:r.deleted_at ? {by:r.deleted_by, ts:Date.parse(r.deleted_at), reason:r.delete_reason} : null,
   transferred:!!r.transferred_at, transferredAt:r.transferred_at ? Date.parse(r.transferred_at) : null, dayId:r.day_id});
 const mapDay = r => ({id:r.id, shopId:r.shop_id, openedAt:Date.parse(r.opened_at), openedBy:r.opened_by, closedAt:r.closed_at ? Date.parse(r.closed_at) : null, closedBy:r.closed_by, opening:r.opening_balance == null ? null : Number(r.opening_balance), accOpening:r.acc_opening == null ? null : Number(r.acc_opening)});
 const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:r.buy_price==null?null:Number(r.buy_price), minPrice:r.min_price==null?null:Number(r.min_price), sell:Number(r.sell_price), qty:r.qty, archived:!!r.archived});
 const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
   cancelReason:r.cancel_reason, deletedAt:r.deleted_at?Date.parse(r.deleted_at):null, deletedBy:r.deleted_by, buy:r.buy_price==null?null:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
-const mapNote = n => ({shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
+const mapNote = n => ({recipient:n.recipient_id,shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
 
@@ -124,7 +132,14 @@ async function readPages(make){
 async function refresh(){
   if (DEMO) return;
   const refreshActor=me?.id;if(!refreshActor)return;
-  if (me?.role === 'staff'){ await Attendance.load({silent:true}); return; }
+  if (me?.role === 'staff'){
+    const [attendance, messages] = await Promise.all([
+      Attendance.load({silent:true}),
+      sb.from('notes').select('*').eq('recipient_id',refreshActor).order('ts',{ascending:false}).limit(80)
+    ]);
+    if(me?.id===refreshActor&&!messages.error)S.notes=(messages.data||[]).map(mapNote);
+    return attendance;
+  }
   // HR is independent of the ledger. Its completion updates the widget silently.
   void Attendance.load({silent:true}).then(()=>{if(me?.id===refreshActor)softRender();}).catch(()=>{});
   const snapshot=must(await sb.rpc('hcash_ledger_snapshot'));
@@ -181,14 +196,14 @@ function onChange(table, p){
   else if (table === 'shop_drawers'){ if (!del) setDrawers([row]); }
   else if (table === 'device_sales'){ if (del) S.sales = S.sales.filter(s => s.id !== old.id); else upsert(S.sales, mapSale(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
-  else if (table === 'notes' && me?.role === 'admin'){
-    if (p.eventType === 'INSERT'){ const n = mapNote(row); S.notes.unshift(n); notifyDevice(n); }
+  else if (table === 'notes' && (me?.role === 'admin'||row?.recipient_id===me?.id)){
+    if (p.eventType === 'INSERT'){ const n = mapNote(row); upsert(S.notes,n);S.notes.sort((a,b)=>b.ts-a.ts);if(!n.recipient||n.recipient===me.id)notifyDevice(n); }
     else if (!del) upsert(S.notes, mapNote(row));
   }
-  clearTimeout(rtTimer); rtTimer = setTimeout(()=>{if(!ui.hr&&me?.role!=='staff')softRender();}, 120);
+  clearTimeout(rtTimer); rtTimer = setTimeout(()=>{if(table==='notes'||(!ui.hr&&me?.role!=='staff'))softRender();}, 120);
 }
 function notifyDevice(n){
-  if (!document.hidden) return;
+  if (!document.hidden||isNative()) return;
   try { if ('Notification' in window && Notification.permission === 'granted') new Notification('H-Cash', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}); } catch(e){}
 }
 function softRender(){
@@ -210,7 +225,7 @@ async function registerPush(){
     if (perm.receive !== 'granted') return;
     if (!pushListenersReady){
       await P.addListener('registration', t => { pushToken = t.value; if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
-      await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if (e.notification?.data?.module === 'attendance' || e.notification?.data?.kind === 'attendance' || me.role === 'staff'){ui.hr=true;Attendance.openAlert(e.notification?.data?.alert_id,e.notification?.data?.shift_id);}  else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
+      await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if(e.notification?.data?.kind==='personal'){A.inbox();render();return;} if (e.notification?.data?.module === 'attendance' || e.notification?.data?.kind === 'attendance' || me.role === 'staff'){ui.hr=true;Attendance.openAlert(e.notification?.data?.alert_id,e.notification?.data?.shift_id);}  else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
       pushListenersReady = true;
     }
     await P.register();
@@ -264,6 +279,8 @@ function errText(e){
   if(m.includes('HAS_RETURN'))return 'البيعة عليها مرتجع؛ إلغاء التسجيل مش متاح.';
   if (m.includes('NO_STOCK')) return 'الكمية دي مش موجودة في المخزن.';
   if (m.includes('VOUCHER')) return 'اكتب رقم البون.';
+  if (String(e?.message||'').includes('MESSAGE_RECIPIENT')) return 'الموظف ده مش نشط دلوقتي.';
+  if (String(e?.message||'').includes('BAD_DRAWER')) return 'درج الإكسسوارات اتقفل. اختار درج الكاشير.';
   if (m.includes('BAD_PAY')) return 'الدرج ده اتقفل. اختار درج تاني.';
   if (m.includes('NO_DEVICE')) return 'الجهاز ده اتشال من المخزن.';
   if (m === 'unknown_action') return 'البرنامج محتاج يتحدّث. اقفله وافتحه تاني.';
@@ -307,7 +324,7 @@ function band(inner, tall){
       <div class="bar"><img class="brand-mark" src="icons/icon-192.png?v=35" alt="H-Cash"><div class="who"><b>${esc(me.name)}</b><small>H-Cash · ${where} <span class="version-tag">إصدار ${APP_VERSION}</span></small></div>
         ${ui.installEvt ? `<button class="ibtn" data-a="install">سطّب</button>` : ''}
         ${me.role === 'admin' && !ui.hr ? '<button class="ibtn" data-a="hrOpen">الحضور</button>' : ''}
-        ${me.role!=='staff'?'<button class="ibtn" data-a="globalSearch" aria-label="بحث موحّد">بحث</button>':''}${themeBtn()}
+        ${me.role!=='staff'?'<button class="ibtn" data-a="globalSearch" aria-label="بحث موحّد">بحث</button>':''}${me.role!=='admin'?'<button class="ibtn" data-a="inbox" aria-label="رسائلي">رسائلي'+(S.notes.some(n=>n.recipient===me.id&&!n.read)?' •':'')+'</button>':''}${themeBtn()}
         <button class="ibtn" data-a="logout" aria-label="خروج">${icon.out}</button></div>
       ${inner}
     </div></header>
@@ -315,8 +332,13 @@ function band(inner, tall){
 }
 // Cash in the drawer: what the owner started the day with, plus أخدت, minus أعطيت.
 // Device sales paid into the cashier drawer add to it too; the accessory drawer has its own start balance.
-const cashOf = d => { if (!d || d.opening == null) return null; const r = totals(dayTxs(d)); return d.opening + r.took - r.gave + HCashCommerce.dayNet(d).cashier; };
-const accOf = d => (!d || d.accOpening == null) ? null : d.accOpening + HCashCommerce.dayNet(d).acc;
+const cashOf = d => { if (!d || d.opening == null) return null; const r = drawerTxTotals(d,'cashier'); return d.opening + r.took - r.gave + HCashCommerce.dayNet(d).cashier; };
+const drawerTxTotals = (d,drawer) => totals(d ? dayTxs(d).filter(t=>(t.drawer||'cashier')===drawer) : []);
+const accOf = d => {
+  if(!d||d.accOpening==null)return null;
+  const {took,gave}=drawerTxTotals(d,'acc');
+  return d.accOpening+took-gave+HCashCommerce.dayNet(d).acc;
+};
 const lastClosed = (shopId, key, fn) => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x[key] != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? fn(d) : null; };
 const lastClosedCash = (shopId, drawer = 'cashier') => drawer === 'acc' ? lastClosed(shopId, 'accOpening', accOf) : lastClosed(shopId, 'opening', cashOf);
 const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
@@ -327,6 +349,7 @@ function item(x, o = {}){
   const T = TYPES[x.type], sub = [];
   if (o.date) sub.push(dayLabel(x.date));
   sub.push(tm(x.ts));
+  if(x.drawer==='acc')sub.push(dn('acc',x.shopId));
   if (o.shop) sub.push(esc(shop(x.shopId)?.name));
   if (o.who) sub.push(esc(user(x.userId)?.name));
   let end = o.end || '';
@@ -427,7 +450,7 @@ function renderCashier(){
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cancelled=S.txs.filter(t=>t.deleted&&t.userId===me.id&&t.dayId===od?.id);
   const cash = cashOf(od);
-  return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(totals(list)) + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
+  return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(drawerTxTotals(od,'cashier')) + (isOn(s.id,'acc')?'<small class="dayinfo">'+dn('acc',s.id)+'</small>'+sumBox(drawerTxTotals(od,'acc')):'') + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
   <main class="wrap cashier-work gut">
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
@@ -445,7 +468,7 @@ function renderCashier(){
 function renderAdmin(){
   const pend = pendingList();
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck).length;
-  const unread = S.notes.filter(n => !n.read).length;
+  const unread = S.notes.filter(n => !n.recipient&&!n.read).length;
   const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['dev','الأجهزة',0],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
   const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop);
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
@@ -543,7 +566,7 @@ function tabTxs(){
 function tabNotes(){
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
   return `${perm === 'default' ? `<div class="card"><p>فعّل الإشعارات علشان توصلك والبرنامج في الخلفية.</p><button class="btn primary" data-a="askNotify">فعّل الإشعارات</button></div>` : ''}
-    <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
+    <button class="btn primary" data-a="composeMessage">إرسال لموظف</button> <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${n.recipient?'إلى '+esc(user(n.recipient)?.name||'الموظف')+' · ':''}${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
   return `${HCashBackups.render()}<div class="release-card"><div><b dir="ltr">H-Cash</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
@@ -594,6 +617,15 @@ function renderModal(){
   const searchModal=HCashSearch.modal(ui.modal);if(searchModal!==null)return searchModal;
   const m = ui.modal; if (!m) return '';
   const commerce=HCashCommerce.modal(m);if(commerce!==null)return commerce;
+  if(m.kind==='personalInbox'){
+    const messages=S.notes.filter(n=>n.recipient===me.id);
+    return sheet('<h2>رسائلي</h2>',messages.length?'<ul class="list">'+messages.map(n=>'<li class="item"><div class="mid"><b style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(n.text)+'</b><small>'+dayLabel(dayOf(n.ts))+' · '+tm(n.ts)+'</small></div></li>').join('')+'</ul>':'<p class="empty">مفيش رسائل ليك دلوقتي.</p>');
+  }
+  if(m.kind==='composeMessage'&&me.role==='admin'){
+    const recipients=S.users.filter(u=>u.active&&['cashier','staff'].includes(u.role));
+    return sheet('<h2>إرسال لموظف</h2>',recipients.length?
+      '<form id="messagef"><label class="field">الموظف<select name="recipient" required><option value="">اختار موظف</option>'+recipients.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+(shop(u.shop_id)?' · '+esc(shop(u.shop_id).name):'')+'</option>').join('')+'</select></label><label class="field">الرسالة<textarea name="text" maxlength="500" rows="4" required></textarea></label><p id="ferr" class="err" role="alert"></p><button class="btn primary wide">ابعت الرسالة</button></form>':'<p class="empty">مفيش موظفين نشطين.</p>');
+  }
   if (m.kind === 'theme'){
     const cur = themePref();
     return sheet(`<h2>شكل البرنامج</h2>`, `<div class="themes" role="radiogroup">${Object.entries(THEMES).map(([k, [l, sub]]) =>
@@ -605,6 +637,7 @@ function renderModal(){
     const T = TYPES[m.type];
     return sheet(`<h2 class="sht"><span class="ic-s">${icon[m.type]}</span>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
       ${me.role === 'admin' ? `<div class="field"><label for="f-shop">المحل</label><select id="f-shop" name="shop">${S.shops.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
+      <div id="tx-drawer-field">${txDrawerField(me.role==='admin'?S.shops[0]?.id:me.shop_id)}</div>
       <div class="field"><label for="pq">الاسم</label><input id="pq" type="search" placeholder="اكتب الاسم أو اختار" autocomplete="off">
         <div id="plist" class="names" role="radiogroup" style="margin-top:4px">${nameOptions('', null)}</div></div>
       <div class="amtbox ${m.type}-t" id="amt" aria-live="polite"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
@@ -811,9 +844,9 @@ function render(){
   else lastSendId = null;
   HCashModalScroll.sync(!!app.querySelector('.overlay'));
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
-  if (me?.role === 'admin' && !ui.hr && ui.tab === 'notes' && S.notes.some(n => !n.read)){
-    const ids = S.notes.filter(n => !n.read).map(n => n.id);
-    S.notes.forEach(n => n.read = true);
+  if (me?.role === 'admin' && !ui.hr && ui.tab === 'notes' && S.notes.some(n => !n.recipient&&!n.read)){
+    const ids = S.notes.filter(n => !n.recipient&&!n.read).map(n => n.id);
+    S.notes.filter(n=>!n.recipient).forEach(n => n.read = true);
     if (!DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {});
   }
 }
@@ -856,6 +889,23 @@ const A = {
   attendanceAlert(v){ui.hr=true;Attendance.openAlert(null,v);return false;},
   applyUpdate(){ location.reload(); return false; },
   hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load({silent:true}).then(render).catch(() => {}); },
+  composeMessage(){if(me.role!=='admin')return false;ui.modal={kind:'composeMessage'};},
+  inbox(){
+    if(me.role==='admin')return false;
+    const actor=me.id;
+    ui.modal={kind:'personalInbox'};
+    if(DEMO)return;
+    void sb.from('notes').select('*').eq('recipient_id',actor).order('ts',{ascending:false}).limit(80).then(async result=>{
+      if(me?.id!==actor||ui.modal?.kind!=='personalInbox'||result.error)return;
+      for(const row of result.data||[])upsert(S.notes,mapNote(row));
+      S.notes.sort((a,b)=>b.ts-a.ts);
+      render();
+      const ids=(result.data||[]).filter(n=>!n.read).map(n=>n.id);
+      if(!ids.length)return;
+      const read=await sb.rpc('hcash_read_messages',{p_ids:ids});
+      if(me?.id===actor&&!read.error){S.notes.filter(n=>ids.includes(n.id)).forEach(n=>n.read=true);softRender();}
+    }).catch(()=>{});
+  },
   hrBack(){ ui.hr = false; ui.modal = null; },
   forgotPin(){ ui.pinUser = null; ui.pin = ''; ui.recovery = 'request'; ui.recoveryError = ''; },
   recoveryBack(){
@@ -918,7 +968,7 @@ const A = {
     if (v !== ui.tab) ui.navFrom = TAB_ORDER.indexOf(ui.tab);
     ui.tab = v; ui.scrollTop = 0;
     if(v==='txs'&&ui.f.from&&!DEMO)void loadHistoryRange(ui.f).then(softRender).catch(()=>{toast('تعذر تحميل الفترة المطلوبة. جرّب البحث تاني.');render();});
-    if (v === 'notes'){ const ids = S.notes.filter(n => !n.read).map(n => n.id); S.notes.forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
+    if (v === 'notes'){ const ids = S.notes.filter(n => !n.recipient&&!n.read).map(n => n.id); S.notes.filter(n=>!n.recipient).forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
   },
   kshop(v){ ui.kshop = v; },
   fshop(v){ ui.f.shop = v;lsSet('history-filters:'+me.id,JSON.stringify(ui.f)); },
@@ -1101,12 +1151,14 @@ const F = {
       else return formErr('اكتب الاسم أو اختار من الأسامي.');
     }
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
-    const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : ui.shopId;
+    const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : me.shop_id;
+    const drawer=String(fd.get('drawer')||'cashier');
+    if(drawer!=='cashier'&&(drawer!=='acc'||DRW[shopId]?.acc?.active!==true))return formErr('الدرج مش متاح للمحل ده.');
     const note = String(fd.get('note') || '').trim();
-    if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed}`);return;}
+    if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note,...(drawer==='acc'?{p_drawer:drawer}:{})},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed}`);return;}
     // no open day yet: start one on screen now; the server opens the real one with this entry
     const od = openDay(shopId), day = od || {id:'local-' + uuid(), shopId, openedAt:Date.now(), openedBy:me.id, closedAt:null};
-    const tx = {id:uuid(), ts:Date.now(), date:dayOf(day.openedAt), dayId:day.id, shopId, userId:me.id, type:m.type, partyId, amount, note,
+    const tx = {id:uuid(), ts:Date.now(), date:dayOf(day.openedAt), dayId:day.id, shopId, userId:me.id, type:m.type, partyId, amount, note, drawer,
       afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
     op(() => { if (newParty) S.parties.push(newParty); if (!od) S.days.push(day); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
       async () => {
@@ -1115,6 +1167,18 @@ const F = {
         if (!od) await refresh().catch(() => {});
         tx.pending = false; softRender();
       }, 'الحركة ما اتسجلتش.');
+  },
+  messagef(fd){
+    if(me.role!=='admin'||ui.modal?.kind!=='composeMessage')return;
+    const recipient=String(fd.get('recipient')||''), message=String(fd.get('text')||'').trim();
+    if(!S.users.some(u=>u.id===recipient&&u.active&&['cashier','staff'].includes(u.role))||!message||message.length>500)
+      return formErr('اختار موظف واكتب رسالة من ١ إلى ٥٠٠ حرف.');
+    const key=JSON.stringify([recipient,message]);
+    if(ui.modal.messageKey!==key){ui.modal.messageKey=key;ui.modal.messageId=uuid();}
+    const id=ui.modal.messageId;
+    if(DEMO){ui.modal=null;toast('معاينة الرسالة تمت.');render();return;}
+    void act(async()=>must(await sb.rpc('hcash_send_message',{p_id:id,p_recipient:recipient,p_text:message})),
+      {done:()=>{ui.modal=null;toast('الرسالة اتحفظت في صندوق الموظف.');}});
   },
   delf(fd){
     const t=S.txs.find(x=>x.id===ui.modal.id),reason=String(fd.get('reason')||'').trim();if(!t||reason.length<3||reason.length>500)return formErr('اكتب سبب واضح من ٣ إلى ٥٠٠ حرف.');
@@ -1194,7 +1258,9 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
-  if (c === 'ushop'){
+  if(el.id==='f-shop'&&ui.modal?.kind==='tx'){
+    document.getElementById('tx-drawer-field').innerHTML=txDrawerField(el.value);
+  }else if (c === 'ushop'){
     const u = user(el.dataset.u), v = el.value || null;
     op(() => { u.shop_id = v; toast(`${u.name}: ${v ? shop(v).name : 'من غير محل'}`); }, async () => must(await sb.from('profiles').update({shop_id:v}).eq('id', u.id)));
   }
@@ -1262,6 +1328,10 @@ function demoData(role){
   const sl = (id, h, m, deviceId, qty, price, pay, voucher = '') => { const d = devices.find(x => x.id === deviceId);
     return {id, ts:at(t, h, m), shopId:d.shopId, dayId:d.shopId === 's1' ? 'd1' : 'd2', deviceId, name:d.name, qty, buy:d.buy, price, pay, voucher, userId:d.shopId === 's1' ? 'u1' : 'u2', deleted:false}; };
   const sales = [sl('x1', 11, 5, 'v1', 1, 8400, 'cashier'), sl('x2', 12, 20, 'v2', 1, 7400, 'acc'), sl('x3', 13, 45, 'v3', 1, 26500, 'hcash', '55821'), sl('x4', 12, 0, 'v5', 1, 5650, 'cashier')];
+  setDrawers([
+    {shop_id:'s1',key:'acc',name:'درج الإكسسوارات',active:true},
+    {shop_id:'s2',key:'acc',name:'درج الإكسسوارات',active:false}
+  ]);
   S = {shops, users, parties, txs, notes, days, devices, sales};
   me = users.find(u => u.role === (role === 'admin' ? 'admin' : 'cashier'));
   ui.shopId = 's1';

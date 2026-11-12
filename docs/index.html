@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>H-Cash</title>
 <meta name="theme-color" content="#102a35">
-<script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script>try{var t=localStorage.getItem('yawmeya-theme');if(t==='light'||t==='dark'||t==='glass')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <meta name="description" content="يومية المحلات: الكاشير بيسجل أخدت وأعطيت، وهشام بينقلها لكناش.">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png?v=40" type="image/png">
-<link rel="apple-touch-icon" href="icons/icon-192.png?v=40">
+<link rel="icon" href="icons/icon-192.png?v=41" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=41">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://srpgxvdbpkinrvklwywx.supabase.co">
@@ -28,7 +28,7 @@
   --num:"Readex Pro","IBM Plex Sans Arabic",Tahoma,sans-serif;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme: dark){:root:not([data-theme]){
   --brand:#122640; --brand-2:#1c3d68; --brand-muted:rgba(255,255,255,.7);
   --bg:#0e1218; --surface:#171d27; --sunk:#121821; --ink:#eef2f7; --muted:#a1abb9; --line:#27303c;
   --accent:#3f7be0; --accent-ink:#ffffff; --strong:#3f7be0;
@@ -309,12 +309,13 @@ details summary::-webkit-details-marker{display:none}
 .switch small{font-size:.72rem;color:var(--muted)}
 /* theme picker */
 .thbtn{padding:0 10px}
-.themes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.themes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(min-width:560px){.themes{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .th{border:2px solid var(--line);background:var(--surface);border-radius:18px;padding:10px 8px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--ink);font-weight:700;transition:border-color .2s, transform .15s}
 .th.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent)}
 .th small{color:var(--muted);font-weight:500;font-size:.78rem}
 .thl{display:inline-flex;align-items:center;gap:5px} .thl svg{width:17px;height:17px}
-.prev{width:100%;aspect-ratio:3/4;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:0 0 6px;border:1px solid rgba(127,127,127,.25)}
+.prev{width:100%;aspect-ratio:2/1;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:0 0 6px;border:1px solid rgba(127,127,127,.25)}
 .prev i{height:34%;display:block}
 .prev b{height:16%;margin:0 7px;border-radius:5px;display:block}
 .p-light{background:#f1f3f7} .p-light i{background:linear-gradient(160deg,#1f4f8f,#14325e)} .p-light b{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -423,7 +424,7 @@ details summary::-webkit-details-marker{display:none}
 
 /* H-Cash identity: midnight navy, emerald actions, quiet readable surfaces. */
 :root{--brand:#102a35;--brand-2:#164b4a;--bg:#f2f7f5;--accent:#087b65;--accent-ink:#fff;--strong:#102a35;--cs:#087b65;--cs-soft:#e4f3ed;--shadow:0 2px 4px rgba(9,39,35,.035),0 8px 24px rgba(9,39,35,.055)}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--brand:#102a35;--brand-2:#123b3d;--bg:#0c1519;--surface:#152126;--sunk:#101b20;--line:#2a3d42;--ink:#edf7f4;--muted:#a7bcb7;--accent:#63d5b6;--accent-ink:#082d25;--strong:#77e0c4;--cs:#77e0c4;--cs-soft:#12332c;--shadow:0 2px 12px rgba(0,0,0,.18)}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--brand:#102a35;--brand-2:#123b3d;--bg:#0c1519;--surface:#152126;--sunk:#101b20;--line:#2a3d42;--ink:#edf7f4;--muted:#a7bcb7;--accent:#63d5b6;--accent-ink:#082d25;--strong:#77e0c4;--cs:#77e0c4;--cs-soft:#12332c;--shadow:0 2px 12px rgba(0,0,0,.18)}}
 :root[data-theme="dark"]{--brand:#102a35;--brand-2:#123b3d;--bg:#0c1519;--surface:#152126;--sunk:#101b20;--line:#2a3d42;--ink:#edf7f4;--muted:#a7bcb7;--accent:#63d5b6;--accent-ink:#082d25;--strong:#77e0c4;--cs:#77e0c4;--cs-soft:#12332c;--shadow:0 2px 12px rgba(0,0,0,.18)}
 .brand-mark{display:block;object-fit:contain;flex-shrink:0;width:34px;height:34px;border-radius:10px}.logo .brand-mark{width:56px;height:56px;border-radius:16px;box-shadow:0 5px 18px rgba(16,42,53,.12)}
 .brand-word{font-family:var(--num);font-weight:700;letter-spacing:-.8px;font-size:1.6rem}.login .logo{justify-content:flex-start;gap:12px}.login .ugrid{gap:14px}.band .bar{gap:8px}.band .who small{font-size:.76rem}
@@ -438,7 +439,7 @@ details summary::-webkit-details-marker{display:none}
 .band .who{min-width:0}.band .who small{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.band .who .version-tag{margin-inline-start:0;font-size:10px}
 .nav button{min-height:58px}.card .cashline{gap:10px}.amt,.cashline b{font-variant-numeric:tabular-nums}
 :root{--strong-ink:#fff;--took-ink:#fff;--gave-ink:#fff}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--strong-ink:#082d25;--took-ink:#082d25;--gave-ink:#32100e}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--strong-ink:#082d25;--took-ink:#082d25;--gave-ink:#32100e}}
 :root[data-theme="dark"]{--strong-ink:#082d25;--took-ink:#082d25;--gave-ink:#32100e}
 .btn.dark,.lockic{color:var(--strong-ink)}.lockic.off{color:var(--muted)}
 .btn.took,.sheet .sh.took,.act.took .ic,.kstep .press b.took{color:var(--took-ink)}
@@ -488,28 +489,66 @@ button:disabled,[aria-disabled="true"]{cursor:default}
 }
 @media(prefers-reduced-motion:reduce){.tap-echo{display:none}:where(button,a.btn,summary,[role="button"]){transition:none!important;scale:none!important}}
 
+/* Glass keeps form controls opaque and uses translucent surfaces over a light gradient. */
+:root[data-theme="glass"]{
+  --bg:#e4f1f3;--surface:#f6fbfc;--sunk:#eaf4f6;--ink:#152f39;--muted:#435e69;--line:#bfd5db;
+  --brand:#12484d;--brand-2:#1a626b;--strong:#164f57;--accent:#0d6d64;--accent-ink:#fff;
+  --took:#096d42;--took-soft:#e0f3e9;--gave:#ad3832;--gave-soft:#fce9e8;
+  --cs:#185e75;--cs-soft:#e0f0f6;--shadow:0 6px 22px rgba(25,75,92,.10);
+  --glass-surface:rgba(255,255,255,.74);--glass-edge:rgba(255,255,255,.88);
+  color-scheme:light;
+}
+[data-theme="glass"] body{
+  background:radial-gradient(ellipse at 12% 4%,#c6e5f3 0,transparent 57%),
+             radial-gradient(ellipse at 94% 43%,#c9ede5 0,transparent 55%),
+             linear-gradient(160deg,#e6f1f6,#e7f5f0);
+}
+[data-theme="glass"] .auth-screen{background:transparent}
+[data-theme="glass"] .band{background:linear-gradient(155deg,#246e77 0%,#12484d 62%,#123b48 100%)}
+@media(max-width:420px){
+  [data-theme="glass"] .band .bar{flex-wrap:wrap}
+  [data-theme="glass"] .band .who{flex:1 0 calc(100% - 46px)}
+}
+[data-theme="glass"] :is(.card,.list,.auth-panel,.att-card,.att-widget,.att-tabs,.settings-section,.release-card){
+  background-color:var(--glass-surface);
+  box-shadow:inset 0 1px 0 var(--glass-edge),var(--shadow);
+}
+@supports ((backdrop-filter:blur(12px)) or (-webkit-backdrop-filter:blur(12px))){
+  [data-theme="glass"] :is(.nav,.sheet){
+    background-color:rgba(248,253,254,.94);
+    -webkit-backdrop-filter:blur(12px);
+    backdrop-filter:blur(12px);
+  }
+}
+.glass-icon{position:relative;display:inline-block;width:17px;height:17px;flex-shrink:0}
+.glass-icon::before,.glass-icon::after{content:"";position:absolute;width:10px;height:10px;border:1.5px solid currentColor;border-radius:3px}
+.glass-icon::before{top:0;left:0;opacity:.58}.glass-icon::after{bottom:0;right:0;background:color-mix(in srgb,currentColor 10%,transparent)}
+.p-glass{background:linear-gradient(135deg,#bce0f2,#c7ece1)}
+.p-glass i{background:linear-gradient(155deg,#246e77,#12484d)}
+.p-glass b{background:rgba(255,255,255,.74);border-top:1px solid white;box-shadow:0 2px 5px rgba(25,75,92,.12)}
+
 </style>
-<link rel="stylesheet" href="attendance.css?v=40">
-<link rel="stylesheet" href="commerce.css?v=40">
-<link rel="stylesheet" href="search.css?v=40">
+<link rel="stylesheet" href="attendance.css?v=41">
+<link rel="stylesheet" href="commerce.css?v=41">
+<link rel="stylesheet" href="search.css?v=41">
 </head>
 <body>
-<div id="hcash-opening" role="status" aria-label="جاري فتح H-Cash"><div class="opening-emblem"><img src="icons/icon-192.png?v=40" alt=""></div><b class="opening-word">H-Cash</b><span class="opening-caption">يومك وشغلك في مكان واحد</span><span class="opening-track" aria-hidden="true"></span></div>
+<div id="hcash-opening" role="status" aria-label="جاري فتح H-Cash"><div class="opening-emblem"><img src="icons/icon-192.png?v=41" alt=""></div><b class="opening-word">H-Cash</b><span class="opening-caption">يومك وشغلك في مكان واحد</span><span class="opening-track" aria-hidden="true"></span></div>
 <div id="app"><p class="startup-placeholder">جاري تحميل البرنامج…</p></div>
 <script>
 (()=>{const started=performance.now();let closing=false;const dismiss=()=>{if(closing)return;closing=true;const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;setTimeout(()=>{const el=document.getElementById('hcash-opening');if(el){el.classList.add('is-ready');setTimeout(()=>el.remove(),reduced?0:230);}},reduced?0:Math.max(0,650-(performance.now()-started)));};window.HCashOpening={ready:dismiss};setTimeout(dismiss,3500);})();
 </script>
 <noscript>البرنامج محتاج JavaScript يشتغل.</noscript>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=40"></script>
-<script src="payroll-share.js?v=40"></script>
-<script src="attendance.js?v=40"></script>
-<script src="receipts.js?v=40"></script>
-<script src="backups.js?v=40"></script>
-<script src="feedback.js?v=40"></script>
-<script src="commerce.js?v=40"></script>
-<script src="modal-scroll.js?v=40"></script>
-<script src="search.js?v=40"></script>
-<script src="app.js?v=40"></script>
+<script src="config.js?v=41"></script>
+<script src="payroll-share.js?v=41"></script>
+<script src="attendance.js?v=41"></script>
+<script src="receipts.js?v=41"></script>
+<script src="backups.js?v=41"></script>
+<script src="feedback.js?v=41"></script>
+<script src="commerce.js?v=41"></script>
+<script src="modal-scroll.js?v=41"></script>
+<script src="search.js?v=41"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>
