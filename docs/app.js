@@ -1,6 +1,19 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 41; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 42; // bump with version.json on every release so open apps refresh themselves
+// Append the changes for each release before bumping APP_VERSION.
+const RELEASE_NOTES = [
+  {version:41, changes:[
+    'اختيار درج الإكسسوارات في أخدت وأعطيت لما يكون متفعّل للمحل.',
+    'رسائل خاصة من هشام لموظف محدد.',
+    'حضور وانصراف فقط، وكشف مرتب فيه أوقات وساعات كل يوم.',
+    'ثيم جلاس اختياري من «شكل البرنامج».'
+  ]},
+  {version:42, changes:[
+    'الرسائل في الرئيسية، مع تنبيه واضح للموظف لما توصله رسالة.',
+    'زر الرجوع يقفل النافذة أو يرجّعك داخل التطبيق.'
+  ]}
+];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
 const RECOVERY_URL = 'https://khalidjomaa98-collab.github.io/yawmeya/?recover=1';
 const RECOVERY_ENTRY = new URLSearchParams(location.search).has('recover') || new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery';
@@ -123,6 +136,38 @@ const mapDev = r => ({id:r.id, shopId:r.shop_id, name:r.name, buy:r.buy_price==n
 const mapSale = r => ({id:r.id, ts:Date.parse(r.ts), shopId:r.shop_id, dayId:r.day_id, deviceId:r.device_id, name:r.device_name, qty:r.qty,
   cancelReason:r.cancel_reason, deletedAt:r.deleted_at?Date.parse(r.deleted_at):null, deletedBy:r.deleted_by, buy:r.buy_price==null?null:Number(r.buy_price), price:Number(r.sell_price), pay:r.pay, voucher:r.voucher || '', userId:r.user_id, deleted:!!r.deleted_at});
 const mapNote = n => ({recipient:n.recipient_id,shiftId:n.attendance_shift, id:n.id, ts:Date.parse(n.ts), text:n.text, kind:n.kind, read:n.read});
+const dismissedMessageAlerts = new Set();
+const personalMessages = () => S.notes.filter(n=>me && n.kind==='personal' && n.recipient===me.id);
+function receivePersonalMessages(rows){
+  for(const row of rows){
+    if(!me||row.kind!=='personal'||row.recipient_id!==me.id)continue;
+    const note=mapNote(row);
+    if(S.notes.some(previous=>previous.id===note.id&&previous.read))note.read=true;
+    upsert(S.notes,note);
+  }
+  S.notes.sort((a,b)=>b.ts-a.ts);
+  syncMessageAlert();
+}
+function syncMessageAlert(){
+  const el=document.getElementById('personal-message-alert');
+  if(!el)return;
+  const unread=personalMessages().filter(n=>!n.read&&!dismissedMessageAlerts.has(n.id));
+  const latest=unread[0];
+  el.hidden=!latest||ui.initialLoading||ui.booting||!!ui.recovery||['personalInbox','releaseNotes'].includes(ui.modal?.kind);
+  if(el.hidden){el.replaceChildren();delete el.dataset.message;return;}
+  const key=latest.id+':'+unread.length;
+  if(el.dataset.message===key)return;
+  el.dataset.message=key;
+  el.innerHTML=`<div><strong>رسالة جديدة من الإدارة</strong><small>${unread.length>1?`${unread.length} رسائل غير مقروءة`:'عندك رسالة في صندوق الوارد'}</small></div><button class="btn primary sm" data-a="inbox">اقرأ</button><button class="btn sm" data-a="dismissMessageAlert" aria-label="إخفاء التنبيه">×</button>`;
+}
+async function fetchPersonalMessages(actor, id){
+  let query=sb.from('notes').select('*').eq('recipient_id',actor).eq('kind','personal');
+  if(id)query=query.eq('id',id);
+  const rows=must(await query.order('ts',{ascending:false}).limit(80))||[];
+  if(me?.id!==actor)return [];
+  receivePersonalMessages(rows);
+  return rows;
+}
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
 
@@ -137,7 +182,7 @@ async function refresh(){
       Attendance.load({silent:true}),
       sb.from('notes').select('*').eq('recipient_id',refreshActor).order('ts',{ascending:false}).limit(80)
     ]);
-    if(me?.id===refreshActor&&!messages.error)S.notes=(messages.data||[]).map(mapNote);
+    if(me?.id===refreshActor&&!messages.error)receivePersonalMessages(messages.data||[]);
     return attendance;
   }
   // HR is independent of the ledger. Its completion updates the widget silently.
@@ -159,7 +204,8 @@ async function refresh(){
   const pend = S.txs.filter(t => t.pending);
   S.txs = must(txs).map(mapTx);
   pend.forEach(p => { if (!S.txs.some(t => t.id === p.id)) S.txs.push(p); });
-  S.notes = must(notes).map(mapNote);
+  if(me.role==='admin')S.notes=must(notes).map(mapNote);
+  else receivePersonalMessages(must(notes));
   S.days = must(days).map(mapDay);
   for (const d of extraDays) await fetchDay(d, false);
   if(me?.id!==refreshActor)return;
@@ -197,14 +243,23 @@ function onChange(table, p){
   else if (table === 'device_sales'){ if (del) S.sales = S.sales.filter(s => s.id !== old.id); else upsert(S.sales, mapSale(row)); }
   else if (table === 'parties'){ if (!del) upsert(S.parties, {id:row.id, name:row.name, phone:row.phone}); }
   else if (table === 'notes' && (me?.role === 'admin'||row?.recipient_id===me?.id)){
-    if (p.eventType === 'INSERT'){ const n = mapNote(row); upsert(S.notes,n);S.notes.sort((a,b)=>b.ts-a.ts);if(!n.recipient||n.recipient===me.id)notifyDevice(n); }
-    else if (!del) upsert(S.notes, mapNote(row));
+    if(del)S.notes=S.notes.filter(n=>n.id!==old.id);
+    else if(row.recipient_id===me.id)receivePersonalMessages([row]);
+    else {upsert(S.notes,mapNote(row));S.notes.sort((a,b)=>b.ts-a.ts);}
+    if(p.eventType==='INSERT'&&(!row.recipient_id||row.recipient_id===me.id))notifyDevice(mapNote(row));
+    if(ui.modal?.kind==='personalInbox'){render();return;}
   }
   clearTimeout(rtTimer); rtTimer = setTimeout(()=>{if(table==='notes'||(!ui.hr&&me?.role!=='staff'))softRender();}, 120);
 }
 function notifyDevice(n){
   if (!document.hidden||isNative()) return;
-  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('H-Cash', {body:n.text, tag:n.id, icon:'icons/icon-192.png'}); } catch(e){}
+  try {
+    if(!('Notification' in window)||Notification.permission!=='granted')return;
+    const notice=new Notification(n.recipient?'رسالة من الإدارة':'H-Cash',{
+      body:n.recipient?'افتح H-Cash لقراءة رسالتك':n.text,tag:n.id,icon:'icons/icon-192.png'
+    });
+    if(n.recipient)notice.onclick=()=>{window.focus();notice.close();if(me?.id===n.recipient){A.inbox();render();}};
+  }catch(e){}
 }
 function softRender(){
   const a = document.activeElement;
@@ -222,9 +277,18 @@ async function registerPush(){
   try {
     let perm = await P.checkPermissions();
     if (perm.receive !== 'granted') perm = await P.requestPermissions();
-    if (perm.receive !== 'granted') return;
+    if (perm.receive !== 'granted'){pushReady=false;return;}
+    if(me.role!=='admin'&&P.createChannel){
+      await P.createChannel({id:'hcash-messages',name:'رسائل الإدارة',importance:4,visibility:0,vibration:true}).catch(()=>{});
+    }
     if (!pushListenersReady){
       await P.addListener('registration', t => { pushToken = t.value; if (me) sb.from('push_tokens').upsert({token:t.value, user_id:me.id}).then(() => {}); });
+      await P.addListener('pushNotificationReceived', ({data}) => {
+        if(!me||me.role==='admin'||data?.kind!=='personal'||!data.id)return;
+        void fetchPersonalMessages(me.id,data.id).then(()=>{
+          if(ui.modal?.kind==='personalInbox')render();else softRender();
+        }).catch(()=>{});
+      });
       await P.addListener('pushNotificationActionPerformed', e => { if (!me) return; if(e.notification?.data?.kind==='personal'){A.inbox();render();return;} if (e.notification?.data?.module === 'attendance' || e.notification?.data?.kind === 'attendance' || me.role === 'staff'){ui.hr=true;Attendance.openAlert(e.notification?.data?.alert_id,e.notification?.data?.shift_id);}  else if (me.role === 'admin'){ ui.hr = false; ui.tab = 'notes'; } render(); });
       pushListenersReady = true;
     }
@@ -442,9 +506,26 @@ function renderLogin(){
     </section><footer class="auth-footer"><span>H-Cash</span><span>إصدار ${APP_VERSION}</span></footer></div></main>`;
 }
 
+function messageRows(notes, sent=false){
+  return notes.map(n=>`<li class="item"><div class="mid message-text">
+    ${sent?`<b>إلى ${esc(user(n.recipient)?.name||'الموظف')}</b>`:n.read?'':'<strong class="message-unread">جديدة</strong>'}
+    <p>${esc(n.text)}</p><small>${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}${sent?` · ${n.read?'اتقرت':'لسه ما اتقرتش'}`:''}</small>
+  </div></li>`).join('');
+}
+function dashboardMessages(){
+  const manager=me.role==='admin';
+  const notes=manager?S.notes.filter(n=>n.kind==='personal'&&n.recipient):personalMessages();
+  const unread=manager?0:notes.filter(n=>!n.read).length;
+  const latest=unread?notes.find(n=>!n.read):notes[0];
+  return `<section class="card dashboard-messages${unread?' has-unread':''}">
+    <div class="head"><h2>${manager?'رسائل الفريق':'رسائلي'}</h2>${unread?`<strong class="message-unread">${unread===1?'رسالة جديدة':`${unread} رسائل جديدة`}</strong>`:''}</div>
+    ${latest?`<p class="message-preview">${manager?`<b>إلى ${esc(user(latest.recipient)?.name||'الموظف')} · </b>`:''}${esc(latest.text)}</p>`:`<p class="muted small">${manager?'ابعت رسالة خاصة لموظف بالاسم.':'مفيش رسائل ليك دلوقتي.'}</p>`}
+    <div class="message-actions">${manager?'<button class="btn primary sm" data-a="composeMessage">إرسال لموظف</button><button class="btn sm" data-a="sentMessages">الرسائل المرسلة</button>':`<button class="btn ${unread?'primary ':''}sm" data-a="inbox">${unread?'اقرأ الرسائل':'افتح رسائلي'}</button>`}</div>
+  </section>`;
+}
 function renderCashier(){
   const s = shop(me.shop_id);
-  if (!s) return `${band('')}<main class="wrap gut"><p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
+  if (!s) return `${band('')}<main class="wrap gut">${dashboardMessages()}<p class="empty">هشام لسه ما حددلكش أنهي محل. كلّمه يحددهولك من الإعدادات.</p></main>`;
   const od = openDay(s.id);
   const list = S.txs.filter(t => live(t) && t.shopId === s.id && (od ? t.dayId === od.id : false || (t.pending && !t.dayId)) ).sort((a, b) => b.ts - a.ts);
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
@@ -452,6 +533,7 @@ function renderCashier(){
   const cash = cashOf(od);
   return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(drawerTxTotals(od,'cashier')) + (isOn(s.id,'acc')?'<small class="dayinfo">'+dn('acc',s.id)+'</small>'+sumBox(drawerTxTotals(od,'acc')):'') + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
   <main class="wrap cashier-work gut">
+    ${dashboardMessages()}
     <div class="acts">
       <button class="act took" data-a="type" data-v="took"><span class="ic">${icon.took}</span>أخدت</button>
       <button class="act gave" data-a="type" data-v="gave"><span class="ic">${icon.gave}</span>أعطيت</button>
@@ -505,7 +587,7 @@ function tabKenash(){
   const alerts = S.txs.filter(t => t.deleted && t.transferred && !t.deleteAck);
   const recent = S.txs.filter(t => live(t) && t.transferred && t.transferredAt).sort((a, b) => b.transferredAt - a.transferredAt).slice(0, 6);
   const days = [...new Set(pend.map(t => t.date))];
-  return `${HCashCommerce.quickActions()}${openDaysCard()}${S.days.filter(d=>!d.closedAt&&(ui.kshop==='all'||d.shopId===ui.kshop)).map(d=>HCashCommerce.returnList(d)).join('')}
+  return `${dashboardMessages()}${HCashCommerce.quickActions()}${openDaysCard()}${S.days.filter(d=>!d.closedAt&&(ui.kshop==='all'||d.shopId===ui.kshop)).map(d=>HCashCommerce.returnList(d)).join('')}
     ${pend.length ? `<button class="btn primary wide" data-a="send" data-v="${pend[0].id}" style="box-shadow:var(--shadow)">ابدأ النقل لكناش</button>` : ''}
     ${alerts.length ? `<section><h2 class="gave-t">امسح دول من كناش</h2>
       <ul class="list">${alerts.map(x => item(x, {shop:true, date:true, end:`<button class="btn sm" data-a="ack" data-v="${x.id}">مسحتها</button>`})).join('')}</ul></section>` : ''}
@@ -618,8 +700,18 @@ function renderModal(){
   const m = ui.modal; if (!m) return '';
   const commerce=HCashCommerce.modal(m);if(commerce!==null)return commerce;
   if(m.kind==='personalInbox'){
-    const messages=S.notes.filter(n=>n.recipient===me.id);
-    return sheet('<h2>رسائلي</h2>',messages.length?'<ul class="list">'+messages.map(n=>'<li class="item"><div class="mid"><b style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(n.text)+'</b><small>'+dayLabel(dayOf(n.ts))+' · '+tm(n.ts)+'</small></div></li>').join('')+'</ul>':'<p class="empty">مفيش رسائل ليك دلوقتي.</p>');
+    const messages=personalMessages();
+    const permission=!isNative()&&'Notification' in window&&Notification.permission==='default';
+    const list=messages.length?`<ul class="list">${messageRows(messages)}</ul>`:'<p class="empty">مفيش رسائل ليك دلوقتي.</p>';
+    return sheet('<h2>رسائلي</h2>',`${permission?'<button class="btn sm" data-a="askNotify">فعّل إشعارات الرسائل</button>':''}${list}`);
+  }
+  if(m.kind==='sentMessages'&&me.role==='admin'){
+    const messages=S.notes.filter(n=>n.kind==='personal'&&n.recipient);
+    return sheet('<h2>الرسائل المرسلة</h2>',messages.length?`<ul class="list">${messageRows(messages,true)}</ul>`:'<p class="empty">مفيش رسائل مرسلة لسه.</p>');
+  }
+  if(m.kind==='releaseNotes'){
+    const updates=RELEASE_NOTES.filter(r=>r.version>m.lastSeen&&r.version<=APP_VERSION);
+    return sheet(`<h2>إيه الجديد في إصدار ${APP_VERSION}؟</h2>`,`${updates.map(r=>`<section class="release-notes"><h3>إصدار ${r.version}</h3><ul>${r.changes.map(change=>`<li>${esc(change)}</li>`).join('')}</ul></section>`).join('')}<button class="btn primary wide" data-a="closeModal">تمام</button>`);
   }
   if(m.kind==='composeMessage'&&me.role==='admin'){
     const recipients=S.users.filter(u=>u.active&&['cashier','staff'].includes(u.role));
@@ -788,9 +880,40 @@ function toast(t, undoId){
 }
 let lastView = '', lastSendId = null;
 const seen = new Set(), counts = {};
+const shownReleases = new Set(), previousTabs = [];
+function offerReleaseNotes(){
+  if(!me||ui.booting||ui.initialLoading||ui.recovery||ui.modal)return;
+  const key=`hcash-seen-release:${DEMO?'demo:':''}${me.id}`;
+  const lastSeen=Number(lsGet(key))||0;
+  if(lastSeen>=APP_VERSION||shownReleases.has(key))return;
+  ui.modal={kind:'releaseNotes',lastSeen};
+  shownReleases.add(key);
+  lsSet(key,String(APP_VERSION));
+}
+function syncBrowserBack(){
+  if(isNative()||history.state?.hcashBack)return;
+  const inside=me?.role==='staff'?Attendance.hasStaffBack():me&&(ui.hr||ui.tab!=='kenash');
+  if(ui.modal||ui.pinUser||ui.recovery||inside){
+    history.pushState({hcashBack:true},'');
+  }
+}
+function goBackInApp(){
+  if(ui.busy||ui.saving||ui.pinBusy){syncBrowserBack();return;}
+  if(ui.modal)A.closeModal();
+  else if(ui.recovery){if(A.recoveryBack()===false)return;}
+  else if(!me&&ui.pinUser)A.loginBack();
+  else if(me?.role==='staff')Attendance.backToToday();
+  else if(me&&ui.hr)A.hrBack();
+  else if(me?.role==='admin'&&ui.tab!=='kenash'){
+    ui.tab=previousTabs.pop()||'kenash';
+    ui.scrollTop=0;
+  }
+  render();
+}
 const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
 function render(){
   ui.dirty = false;
+  offerReleaseNotes();
   const app = document.getElementById('app');
   const view = me&&ui.initialLoading?'initial:'+me.role:me && (ui.hr || me.role === 'staff') ? 'attendance:' + me.role : ui.recovery ? 'recovery:' + ui.recovery : ui.booting ? 'boot' : !me ? (ui.pinUser ? 'pin' : 'login') : me.role + ':' + (me.role === 'admin' ? ui.tab : 'home');
   const oldOv = app.querySelector('.overlay:not(.out)'), hadModal = !!oldOv;
@@ -843,6 +966,8 @@ function render(){
   if (ui.modal?.kind === 'send'){ const k = app.querySelector('.kstep'); if (k && lastSendId && lastSendId !== ui.modal.id) k.classList.add('swap'); lastSendId = ui.modal.id; }
   else lastSendId = null;
   HCashModalScroll.sync(!!app.querySelector('.overlay'));
+  syncMessageAlert();
+  syncBrowserBack();
   document.querySelector('[data-autofocus]')?.focus({preventScroll:true});
   if (me?.role === 'admin' && !ui.hr && ui.tab === 'notes' && S.notes.some(n => !n.recipient&&!n.read)){
     const ids = S.notes.filter(n => !n.recipient&&!n.read).map(n => n.id);
@@ -890,20 +1015,28 @@ const A = {
   applyUpdate(){ location.reload(); return false; },
   hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load({silent:true}).then(render).catch(() => {}); },
   composeMessage(){if(me.role!=='admin')return false;ui.modal={kind:'composeMessage'};},
+  sentMessages(){if(me.role!=='admin')return false;ui.modal={kind:'sentMessages'};},
+  dismissMessageAlert(){
+    personalMessages().filter(n=>!n.read).forEach(n=>dismissedMessageAlerts.add(n.id));
+    syncMessageAlert();
+    return false;
+  },
   inbox(){
     if(me.role==='admin')return false;
     const actor=me.id;
     ui.modal={kind:'personalInbox'};
-    if(DEMO)return;
-    void sb.from('notes').select('*').eq('recipient_id',actor).order('ts',{ascending:false}).limit(80).then(async result=>{
-      if(me?.id!==actor||ui.modal?.kind!=='personalInbox'||result.error)return;
-      for(const row of result.data||[])upsert(S.notes,mapNote(row));
-      S.notes.sort((a,b)=>b.ts-a.ts);
+    if(DEMO){personalMessages().forEach(n=>n.read=true);return;}
+    void fetchPersonalMessages(actor).then(async rows=>{
+      if(me?.id!==actor||ui.modal?.kind!=='personalInbox')return;
       render();
-      const ids=(result.data||[]).filter(n=>!n.read).map(n=>n.id);
+      const ids=rows.filter(n=>!n.read).map(n=>n.id);
       if(!ids.length)return;
       const read=await sb.rpc('hcash_read_messages',{p_ids:ids});
-      if(me?.id===actor&&!read.error){S.notes.filter(n=>ids.includes(n.id)).forEach(n=>n.read=true);softRender();}
+      if(me?.id===actor&&!read.error){
+        personalMessages().filter(n=>ids.includes(n.id)).forEach(n=>n.read=true);
+        syncMessageAlert();
+        if(ui.modal?.kind==='personalInbox')render();else softRender();
+      }
     }).catch(()=>{});
   },
   hrBack(){ ui.hr = false; ui.modal = null; },
@@ -930,7 +1063,8 @@ const A = {
     if (chan){ sb.removeChannel(chan); chan = null; }
     const removePush = pushToken && me ? sb.from('push_tokens').delete().eq('user_id',me.id).eq('token',pushToken) : Promise.resolve();
     initialLoadGeneration++;extraDays.clear();ui.initialLoading=false;ui.initialPending=false;ui.initialError='';HCashCommerce.reset();HCashBackups.reset();HCashSearch.reset();Attendance.reset(); pushReady = false; ui.hr = false;
-    me = null; ui.modal = null; S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
+    me = null; ui.modal = null; ui.tab='kenash';previousTabs.length=0;dismissedMessageAlerts.clear();
+    S = {shops:[], users:[], parties:[], txs:[], notes:[], days:[], devices:[], sales:[]};
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
@@ -965,7 +1099,11 @@ const A = {
     return false;
   },
   tab(v){
-    if (v !== ui.tab) ui.navFrom = TAB_ORDER.indexOf(ui.tab);
+    if(v!==ui.tab){
+      ui.navFrom=TAB_ORDER.indexOf(ui.tab);
+      if(v==='kenash')previousTabs.length=0;
+      else {previousTabs.push(ui.tab);if(previousTabs.length>20)previousTabs.shift();}
+    }
     ui.tab = v; ui.scrollTop = 0;
     if(v==='txs'&&ui.f.from&&!DEMO)void loadHistoryRange(ui.f).then(softRender).catch(()=>{toast('تعذر تحميل الفترة المطلوبة. جرّب البحث تاني.');render();});
     if (v === 'notes'){ const ids = S.notes.filter(n => !n.recipient&&!n.read).map(n => n.id); S.notes.filter(n=>!n.recipient).forEach(n => n.read = true); if (ids.length && !DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {}); }
@@ -1283,8 +1421,10 @@ document.addEventListener('input', e => {
   else if (e.target.id === 'sv' && ui.modal?.kind === 'sell') ui.modal.voucher = latin(e.target.value);
 });
 document.addEventListener('submit', e => { e.preventDefault(); const fn = F[e.target.id]; if (fn&&!ui.saving&&!ui.busy) fn(new FormData(e.target)); });
+window.addEventListener('hcashback',goBackInApp);
+window.addEventListener('popstate',goBackInApp);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && ui.modal){ ui.modal = null; render(); }
+  if (e.key === 'Escape' && ui.modal)goBackInApp();
   if (!ui.recovery && !me && ui.pinUser && /^\d$/.test(e.key)){ if (A.pin(e.key) !== false) render(); }
 });
 document.addEventListener('focusout', () => setTimeout(() => { if (ui.dirty && !ui.modal) softRender(); }, 50));
@@ -1319,6 +1459,7 @@ function demoData(role){
     tx('t6', t, 13, 10, 's2', 'u2', 'gave', 4, 950, 'سماعة بلوتوث'),
     tx('t7', t, 14, 0, 's1', 'u1', 'took', 0, 150)];
   const notes = [{id:'n1', ts:at(t, 14, 0), read:false, text:'أحمد: أخدت من محمد عبد الله 150 ج.م (المحل الأول)'}, {id:'n2', ts:at(t, 13, 10), read:false, text:'محمود: أعطيت لـ مصطفى الميكانيكي 950 ج.م (المحل التاني)'}];
+  notes.unshift({id:'demo-personal',kind:'personal',recipient:'u1',ts:at(t,14,5),read:false,text:'راجع درج الإكسسوارات قبل قفل اليوم.'});
   const days = [{id:'d0', shopId:'s1', openedAt:at(y, 9, 0), openedBy:'u1', closedAt:at(y, 23, 40), closedBy:'u1', opening:98000},
     {id:'d1', shopId:'s1', openedAt:at(t, 10, 0), openedBy:'u1', closedAt:null, opening:100000, accOpening:5000}, {id:'d2', shopId:'s2', openedAt:at(t, 10, 30), openedBy:'u2', closedAt:null}];
   txs.forEach(x => x.dayId = x.date === y ? 'd0' : (x.shopId === 's1' ? 'd1' : 'd2'));

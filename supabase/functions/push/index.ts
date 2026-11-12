@@ -77,7 +77,11 @@ Deno.serve(async (req) => {
         token,
         notification: { title: TITLES[kind] ?? "H-Cash", body },
         data: { kind: String(kind ?? ""), id: String(id ?? ""), ...(shiftId ? {module:"attendance",shift_id:shiftId} : {}) },
-        android: { priority: "high", notification: { sound: "default", tag: String(id ?? "") } },
+        android: { priority: "high", notification: {
+          sound: "default",
+          tag: String(id ?? ""),
+          ...(recipient ? { channel_id: "hcash-messages", visibility: "PRIVATE", default_vibrate_timings: true } : {}),
+        } },
       } }),
     });
     if (r.ok) sent++;

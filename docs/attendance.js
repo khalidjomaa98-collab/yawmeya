@@ -275,7 +275,8 @@
   }
   function renderStaff() {
     const ok=ready(),tab=state.staffTab;
-    return shell('حضوري ومرتبي',!ok?waiting():`${sectionTabs([['today','ورديتي'],['hours','ساعاتي'],['pay','مستحقاتي']],tab,'staff_tab','أقسام حضوري')}<div class="att-view-heading"><div><h2>${tab==='today'?'أهلًا يا '+e(actor()?.name||''):tab==='hours'?'ساعاتك وطلباتك':'مستحقاتك'}</h2><p class="att-muted">${tab==='today'?'وردية واضحة، وخطوة واحدة للتسجيل':tab==='hours'?'راجع تسجيلاتك وتابع طلبات التصحيح':'الكشوف المعتمدة والدفعات في مكان واحد'}</p></div>${btn('refresh','تحديث')}</div>${tab==='hours'?shiftLogs()+requestList():tab==='pay'?staffSummary()+payrollList():currentCard()+staffSummary()+btn('staff_tab','سجل الحضور وطلبات تعديل الانصراف','hours')}`);
+    const messages=tab==='today'&&actor()?.role==='staff'&&typeof dashboardMessages==='function'?dashboardMessages():'';
+    return shell('حضوري ومرتبي',!ok?waiting():`${messages}${sectionTabs([['today','ورديتي'],['hours','ساعاتي'],['pay','مستحقاتي']],tab,'staff_tab','أقسام حضوري')}<div class="att-view-heading"><div><h2>${tab==='today'?'أهلًا يا '+e(actor()?.name||''):tab==='hours'?'ساعاتك وطلباتك':'مستحقاتك'}</h2><p class="att-muted">${tab==='today'?'وردية واضحة، وخطوة واحدة للتسجيل':tab==='hours'?'راجع تسجيلاتك وتابع طلبات التصحيح':'الكشوف المعتمدة والدفعات في مكان واحد'}</p></div>${btn('refresh','تحديث')}</div>${tab==='hours'?shiftLogs()+requestList():tab==='pay'?staffSummary()+payrollList():currentCard()+staffSummary()+btn('staff_tab','سجل الحضور وطلبات تعديل الانصراف','hours')}`);
   }
   function renderAdmin() {
     const ok=ready();if(!admin())return renderStaff();
@@ -490,5 +491,5 @@
   document.addEventListener('click',event=>{const el=event.target;if(el.matches?.('.att-date input')&&typeof el.showPicker==='function'){try{el.showPicker();}catch(_){}}});
   document.addEventListener('input',keepDraft);
   document.addEventListener('change',keepDraft);
-  window.Attendance={dailyRows,openEmployee:async id=>{if(!admin())return;await load({silent:true});if(!admin())return;state.tab='team';state.focusEmployee=id;redraw();document.querySelector?.('[data-hr-employee="'+id+'"]')?.scrollIntoView({block:'center',behavior:'auto'});},signature:()=>JSON.stringify([state.data.settings,...arrays.map(k=>state.data[k])]),load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,decorateDates,openAlert,openAudit:async()=>{await load({silent:true});state.tab='audit';await loadAudit(true);redraw();},reset};
+  window.Attendance={dailyRows,hasStaffBack:()=>state.staffTab!=='today',backToToday:()=>{state.staffTab='today';state.focusShift=null;},openEmployee:async id=>{if(!admin())return;await load({silent:true});if(!admin())return;state.tab='team';state.focusEmployee=id;redraw();document.querySelector?.('[data-hr-employee="'+id+'"]')?.scrollIntoView({block:'center',behavior:'auto'});},signature:()=>JSON.stringify([state.data.settings,...arrays.map(k=>state.data[k])]),load,renderStaff,renderAdmin,renderWidget,handleAction,handleForm,restoreForms,decorateDates,openAlert,openAudit:async()=>{await load({silent:true});state.tab='audit';await loadAudit(true);redraw();},reset};
 })();
