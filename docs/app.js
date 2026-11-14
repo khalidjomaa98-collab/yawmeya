@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 43; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 44; // bump with version.json on every release so open apps refresh themselves
 // Append the changes for each release before bumping APP_VERSION.
 const RELEASE_NOTES = [
   {version:41, changes:[
@@ -17,6 +17,10 @@ const RELEASE_NOTES = [
     'إخفاء الرسائل من صندوق الوارد وإرجاعها وقت ما تحتاج.',
     'معاينة الرسالة بتختفي من الرئيسية بعد القراءة.',
     'تحسين زر الرجوع وخيار إعادة المحاولة لو التحميل اتأخر.'
+  ]},
+  {version:44, changes:[
+    'اختيار درج الإكسسوارات بيبقى واضح وثابت أثناء التسجيل.',
+    'حسابات حضور وانصراف فقط، وعرض أوضح للأرقام الكبيرة.'
   ]}
 ];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
@@ -102,9 +106,9 @@ const payName = (k, sid) => drw(sid, k).name;
 const dn = (k, sid) => esc(payName(k, sid));
 const isOn = (sid, k) => k === 'cashier' || !!drw(sid, k).active;
 const onKeys = sid => DRAWER_KEYS.filter(k => isOn(sid, k));
-function txDrawerField(sid){
-  if(DRW[sid]?.acc?.active!==true)return '<input type="hidden" name="drawer" value="cashier">';
-  return '<label class="field">الدرج<select name="drawer"><option value="cashier">'+dn('cashier',sid)+'</option><option value="acc">'+dn('acc',sid)+'</option></select></label>';
+function txDrawerField(sid, selected){
+  if(DRW[sid]?.acc?.active!==true)return `<p class="muted small">الدرج: ${dn('cashier',sid)}</p>`;
+  return `<fieldset class="field tx-drawers"><legend>سجّل الحركة في</legend><div>${['cashier','acc'].map(key=>`<label><input type="radio" name="drawer" value="${key}" ${key===selected?'checked':''} required><span>${dn(key,sid)}</span></label>`).join('')}</div></fieldset>`;
 }
 function setDrawers(rows){ (rows || []).forEach(r => { if (DRAWER_DEF[r.key]) (DRW[r.shop_id] ||= {})[r.key] = {name:r.name, active:r.key === 'cashier' || !!r.active}; }); }
 
@@ -434,7 +438,7 @@ const accOf = d => {
 };
 const lastClosed = (shopId, key, fn) => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x[key] != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? fn(d) : null; };
 const lastClosedCash = (shopId, drawer = 'cashier') => drawer === 'acc' ? lastClosed(shopId, 'accOpening', accOf) : lastClosed(shopId, 'opening', cashOf);
-const sumBox = r => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
+const sumBox = (r,drawer) => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="${drawer}-took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="${drawer}-gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
 const shopPills = (cur, action, all) => (S.shops.length < 2 && !all) ? '' :
   `<div class="shops">${[...(all ? [['all', 'المحلين']] : []), ...S.shops.map(s => [s.id, s.name])].map(([id, n]) => `<button class="${cur === id ? 'on' : ''}" data-a="${action}" data-v="${id}">${esc(n)}</button>`).join('')}</div>`;
 
@@ -561,7 +565,7 @@ function renderCashier(){
   const sales = S.sales.filter(x => !x.deleted && x.shopId === s.id && (od ? x.dayId === od.id : (x.pending && !x.dayId)));
   const cancelled=S.txs.filter(t=>t.deleted&&t.userId===me.id&&t.dayId===od?.id);
   const cash = cashOf(od);
-  return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(drawerTxTotals(od,'cashier')) + (isOn(s.id,'acc')?'<small class="dayinfo">'+dn('acc',s.id)+'</small>'+sumBox(drawerTxTotals(od,'acc')):'') + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
+  return `${band(`<div class="cash compact-cash"><small>${dn('cashier', s.id)}</small>${cash == null ? `<b class="none">هشام لسه ما كتبش رصيد البداية</b>` : `<b class="num" data-count="cash" data-val="${cash}">${nf(cash)}</b>`}</div>` + `<details class="ledger-fold" data-keep="cashier-summary"><summary>تفاصيل اليوم والأدراج</summary>` + drawersLine(od, s.id) + sumBox(drawerTxTotals(od,'cashier'),'cashier') + (isOn(s.id,'acc')?'<small class="dayinfo">'+dn('acc',s.id)+'</small>'+sumBox(drawerTxTotals(od,'acc'),'acc'):'') + `<small class="dayinfo">${od ? `اليوم بدأ ${dayLabel(dayOf(od.openedAt))} ${tm(od.openedAt)}${od.opening != null ? ` برصيد ${nf(od.opening)}` : ''}` : 'يوم جديد، هيبدأ مع أول حركة'}</small></details>`, false)}
   <main class="wrap cashier-work gut">
     ${dashboardMessages()}
     <div class="acts">
@@ -584,7 +588,7 @@ function renderAdmin(){
   const tabs = [['kenash','كناش', S.txs.filter(t => live(t) && !t.transferred).length + alerts],['dev','الأجهزة',0],['txs','الحركات',0],['notes','الإشعارات',unread],['set','الإعدادات',0]];
   const ds = S.devices.filter(d => ui.dshop === 'all' || d.shopId === ui.dshop);
   const top = ui.tab === 'kenash' ? `${shopPills(ui.kshop, 'kshop', true)}
-      <div class="sum compact-summary"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div class="pair"><span><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></span><span><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></span></div></div>`
+      <div class="sum compact-summary pending-summary"><div><small>لسه ما اتنقلش</small><b class="num">${pend.length}</b></div><div><small>أخدت</small><b class="num in-t">${nf(totals(pend).took)}</b></div><div><small>أعطيت</small><b class="num out-t">${nf(totals(pend).gave)}</b></div></div>`
     : ui.tab === 'dev' ? `${shopPills(ui.dshop, 'dshop', true)}
       <div class="sum compact-summary"><div><small>أجهزة في المخزن</small><b class="num">${ds.reduce((a, d) => a + d.qty, 0)}</b></div><div><small>قيمتها بسعر الشراء</small><b class="num">${nf(ds.reduce((a, d) => a + d.qty * d.buy, 0))}</b></div></div>`
     : ui.tab === 'txs' ? `<h1>سجل الحركات</h1>`
@@ -760,13 +764,13 @@ function renderModal(){
   if (m.kind === 'tx'){
     const T = TYPES[m.type];
     return sheet(`<h2 class="sht"><span class="ic-s">${icon[m.type]}</span>${T.label} ${T.prep}...</h2>`, `<form id="txf" novalidate>
-      ${me.role === 'admin' ? `<div class="field"><label for="f-shop">المحل</label><select id="f-shop" name="shop">${S.shops.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>` : ''}
-      <div id="tx-drawer-field">${txDrawerField(me.role==='admin'?S.shops[0]?.id:me.shop_id)}</div>
-      <div class="field"><label for="pq">الاسم</label><input id="pq" type="search" placeholder="اكتب الاسم أو اختار" autocomplete="off">
-        <div id="plist" class="names" role="radiogroup" style="margin-top:4px">${nameOptions('', null)}</div></div>
+      ${me.role === 'admin' ? `<div class="field"><label for="f-shop">المحل</label><select id="f-shop" name="shop">${S.shops.map(s => `<option value="${s.id}" ${s.id===m.shopId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>` : ''}
+      <div id="tx-drawer-field">${txDrawerField(m.shopId,m.drawer)}</div>
+      <div class="field"><label for="pq">الاسم</label><input id="pq" type="search" placeholder="اكتب الاسم أو اختار" autocomplete="off" value="${esc(m.query)}">
+        <div id="plist" class="names" role="radiogroup" style="margin-top:4px">${nameOptions(m.query,m.party)}</div></div>
       <div class="amtbox ${m.type}-t" id="amt" aria-live="polite"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','00','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}" ${k === '⌫' ? 'aria-label="امسح رقم"' : ''}>${k}</button>`).join('')}</div>
-      <details><summary class="muted small">+ ملاحظة</summary><input id="f-note" name="note" autocomplete="off" placeholder="مثلًا: شاحن سامسونج" style="margin-top:8px"></details>
+      <details ${m.note?'open':''}><summary class="muted small">+ ملاحظة</summary><input id="f-note" name="note" autocomplete="off" placeholder="مثلًا: شاحن سامسونج" style="margin-top:8px" value="${esc(m.note)}"></details>
       <p id="ferr" class="err" role="alert"></p>
       <button class="btn ${m.type} wide">سجّل</button></form>`, m.type);
   }
@@ -1116,7 +1120,11 @@ const A = {
     Promise.resolve(removePush).catch(() => {}).finally(() => sb.auth.signOut().finally(() => loadLogin().then(render)));
   },
   shop(v){ ui.shopId = v; lsSet('yawmeya-shop', v); },
-  type(v){ ui.modal = {kind:'tx', type:v, amt:''}; },
+  type(v){
+    if(!me||!['admin','cashier'].includes(me.role)||!Object.hasOwn(TYPES,v))return false;
+    const shopId=me.role==='admin'?(shop(ui.kshop)?.id||S.shops[0]?.id):me.shop_id;
+    ui.modal={kind:'tx',type:v,amt:'',shopId,drawer:DRW[shopId]?.acc?.active===true?null:'cashier',query:'',party:null,note:''};
+  },
   kp(v){
     const m = ui.modal; let a = m.amt || '';
     // a pre-filled number (the device's price, the current balance) is replaced by the first digit typed
@@ -1327,6 +1335,7 @@ const F = {
   },
   txf(fd){
     const m = ui.modal;
+    if(m?.kind!=='tx'||!me||!['admin','cashier'].includes(me.role))return;
     const amount = parseFloat(m.amt || '0');
     const v = fd.get('party'), typed = String(document.getElementById('pq').value || '').trim().replace(/\s+/g, ' ');
     let partyId = v && v !== '__new' ? v : null, newParty = null;
@@ -1337,22 +1346,18 @@ const F = {
       else return formErr('اكتب الاسم أو اختار من الأسامي.');
     }
     if (!(amount > 0)) return formErr('اكتب المبلغ بالأرقام.');
-    const shopId = me.role === 'admin' ? (fd.get('shop') || S.shops[0].id) : me.shop_id;
-    const drawer=String(fd.get('drawer')||'cashier');
+    const shopId=me.role==='admin'?m.shopId:me.shop_id;
+    if(!shopId||shopId!==m.shopId)return formErr('اختار محل الحركة.');
+    const drawer=m.drawer;
+    if(!drawer)return formErr('اختار درج الحركة.');
     if(drawer!=='cashier'&&(drawer!=='acc'||DRW[shopId]?.acc?.active!==true))return formErr('الدرج مش متاح للمحل ده.');
     const note = String(fd.get('note') || '').trim();
-    if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note,...(drawer==='acc'?{p_drawer:drawer}:{})},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed}`);return;}
+    if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note,...(drawer==='acc'?{p_drawer:drawer}:{})},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed} · ${payName(drawer,shopId)}`);return;}
     // no open day yet: start one on screen now; the server opens the real one with this entry
     const od = openDay(shopId), day = od || {id:'local-' + uuid(), shopId, openedAt:Date.now(), openedBy:me.id, closedAt:null};
     const tx = {id:uuid(), ts:Date.now(), date:dayOf(day.openedAt), dayId:day.id, shopId, userId:me.id, type:m.type, partyId, amount, note, drawer,
       afterClose:false, deleteAck:false, deleted:null, transferred:false, transferredAt:null, pending:!DEMO};
-    op(() => { if (newParty) S.parties.push(newParty); if (!od) S.days.push(day); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} ✓`, tx.id); try { navigator.vibrate?.(20); } catch(e){} },
-      async () => {
-        if (newParty) must(await sb.from('parties').insert({id:newParty.id, kind:'customer', name:newParty.name}));
-        must(await sb.from('txs').insert({id:tx.id, shop_id:shopId, type:m.type, party_id:partyId, amount, note}));
-        if (!od) await refresh().catch(() => {});
-        tx.pending = false; softRender();
-      }, 'الحركة ما اتسجلتش.');
+    void op(() => { if (newParty) S.parties.push(newParty); if (!od) S.days.push(day); S.txs.push(tx); ui.modal = null; toast(`${TYPES[m.type].label} ${nf(amount)} · ${payName(drawer,shopId)} ✓`, tx.id); }, null);
   },
   messagef(fd){
     if(me.role!=='admin'||ui.modal?.kind!=='composeMessage')return;
@@ -1418,12 +1423,12 @@ const F = {
   drawersf(fd){
     const rows = S.shops.flatMap(sh => DRAWER_KEYS.map(k => ({shop_id:sh.id, key:k, name:String(fd.get(`n|${sh.id}|${k}`) || '').trim().replace(/\s+/g, ' '), active:k === 'cashier' || fd.get(`on|${sh.id}|${k}`) === 'on'})));
     if (rows.some(r => !r.name)) return formErr('كل درج لازم يكون ليه اسم.', 'derr');
-    const changed = rows.filter(r => { const o = drw(r.shop_id, r.key); return o.name !== r.name || isOn(r.shop_id, r.key) !== r.active; });
+    const changed = rows.filter(r => { const o = DRW[r.shop_id]?.[r.key]; return !o || o.name !== r.name || isOn(r.shop_id, r.key) !== r.active; });
     if (!changed.length){ toast('مفيش تغيير'); render(); return; }
-    const before = changed.map(r => ({shop_id:r.shop_id, key:r.key, name:drw(r.shop_id, r.key).name, active:isOn(r.shop_id, r.key)}));
+    const before=structuredClone(DRW);
     op(() => { setDrawers(changed); toast('الأدراج اتحفظت'); },
-       async () => { for (const r of changed) must(await sb.from('shop_drawers').update({name:r.name, active:r.active}).eq('shop_id', r.shop_id).eq('key', r.key)); }, 'ما اتحفظتش.')
-      .then(ok => { if (!ok){ setDrawers(before); render(); } });
+       async () => must(await sb.from('shop_drawers').upsert(changed,{onConflict:'shop_id,key'})), 'ما اتحفظتش.')
+      .then(ok => { if (!ok){ DRW=before; void refresh().then(softRender).catch(()=>{}); render(); } });
   },
   shopsf(fd){
     const changes = S.shops.map(s => [s, String(fd.get(s.id) || '').trim()]).filter(([s, n]) => n && n !== s.name);
@@ -1445,7 +1450,11 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
   if(el.id==='f-shop'&&ui.modal?.kind==='tx'){
-    document.getElementById('tx-drawer-field').innerHTML=txDrawerField(el.value);
+    ui.modal.shopId=el.value;
+    ui.modal.drawer=DRW[el.value]?.acc?.active===true?null:'cashier';
+    document.getElementById('tx-drawer-field').innerHTML=txDrawerField(el.value,ui.modal.drawer);
+  }else if(el.name==='drawer'&&ui.modal?.kind==='tx'){
+    ui.modal.drawer=el.value;
   }else if (c === 'ushop'){
     const u = user(el.dataset.u), v = el.value || null;
     op(() => { u.shop_id = v; toast(`${u.name}: ${v ? shop(v).name : 'من غير محل'}`); }, async () => must(await sb.from('profiles').update({shop_id:v}).eq('id', u.id)));
@@ -1457,6 +1466,7 @@ document.addEventListener('change', e => {
   else if (el.name === 'party'){
     const p = el.value === '__new' ? null : party(el.value), pq = document.getElementById('pq');
     if (p && pq) pq.value = p.name;
+    if(ui.modal?.kind==='tx'){ui.modal.party=el.value;ui.modal.query=pq?.value||'';}
     document.activeElement?.blur?.();
   }
 });
@@ -1464,7 +1474,10 @@ document.addEventListener('input', e => {
   if (e.target.id === 'pq'){
     const pl = document.getElementById('plist'), sel = pl.querySelector('input:checked')?.value || null;
     pl.innerHTML = nameOptions(e.target.value, sel === '__new' ? null : sel);
+    ui.modal.query=e.target.value;
+    ui.modal.party=pl.querySelector('input:checked')?.value||null;
   }
+  else if(e.target.id==='f-note'&&ui.modal?.kind==='tx')ui.modal.note=e.target.value;
   else if (e.target.id === 'dq' && ui.modal?.kind === 'sell'){ ui.modal.q = e.target.value; document.getElementById('dlist').innerHTML = devOptions(ui.modal.shopId, e.target.value); }
   else if (e.target.id === 'sv' && ui.modal?.kind === 'sell') ui.modal.voucher = latin(e.target.value);
 });

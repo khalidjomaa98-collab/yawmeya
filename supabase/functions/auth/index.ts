@@ -18,7 +18,7 @@ const admin = createClient(URL_, SRK, { auth: { persistSession: false, autoRefre
 const PIN_RE = /^\d{4,8}$/;
 const emailFor = (id: string) => `u${id.replace(/-/g, "")}@yawmeya.app`;
 
-async function createAccount(name: string, role: "admin" | "cashier", pin: string) {
+async function createAccount(name: string, role: "admin" | "cashier" | "staff", pin: string) {
   const password = crypto.randomUUID() + crypto.randomUUID();
   const { data, error } = await admin.auth.admin.createUser({
     email: emailFor(crypto.randomUUID()), password, email_confirm: true, user_metadata: { name },
@@ -129,10 +129,11 @@ Deno.serve(async (req) => {
       return json({ closed: c.data === true });
     }
 
-    if (action === "create_user") {
-      if (!name) return json({ error: "name" }, 400);
+    if (action === "create_user" || action === "create_staff") {
+      if (!name || name.length > 80) return json({ error: "name" }, 400);
       if (!PIN_RE.test(pin)) return json({ error: "pin" }, 400);
-      const acc = await createAccount(name, "cashier", pin);
+      if (action === "create_staff" && !/^\d{4}$/.test(pin)) return json({ error: "pin" }, 400);
+      const acc = await createAccount(name, action === "create_staff" ? "staff" : "cashier", pin);
       return json({ id: acc.id });
     }
     if (action === "set_pin") {

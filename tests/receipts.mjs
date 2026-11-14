@@ -21,6 +21,18 @@ function setup(store=new Map(),reply={data:{id:payload.p_id,_receipt_replayed:fa
  const t=setup(new Map(),{error:{message:'network'}});await t.api.submit('sale',payload,'test');t.context.me={id:'another-worker'};assert.equal(t.api.read(),null,'a different signed-in user does not see the pending receipt');
 }
 const app=fs.readFileSync(new URL('../docs/app.js',import.meta.url),'utf8');
+{
+ const accessory={...payload,p_drawer:'acc'};
+ for(const type of ['took','gave']){
+  const t=setup(new Map(),{data:{id:payload.p_id,drawer:'acc'}});
+  assert.equal(await t.api.submit('tx',{...accessory,p_type:type},'accessories'),true);
+  assert.equal(t.calls[0].name,'hcash_post_drawer_tx');
+  assert.equal(t.context.S.txs[0].drawer,'acc');
+ }
+ const wrong=setup(new Map(),{data:{id:payload.p_id,drawer:'cashier'}});
+ assert.equal(await wrong.api.submit('tx',accessory,'accessories'),false);
+ assert.ok(wrong.api.read(),'wrong drawer response must keep the original receipt for review');
+}
 const pageCode=app.slice(app.indexOf('async function readPages('),app.indexOf('async function refresh('));
 const context={must:r=>{if(r.error)throw r.error;return r.data;}};vm.createContext(context);vm.runInContext(pageCode,context);
 const rows=Array.from({length:1236},(_,id)=>({id})),offsets=[];

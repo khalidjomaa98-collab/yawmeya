@@ -14,6 +14,7 @@ window.HCashReceipts=(()=>{
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
    let response;try{response=await sb.rpc(r.kind==='tx'?(r.payload.p_drawer==='acc'?'hcash_post_drawer_tx':'hcash_post_tx'):r.kind==='return'?'hcash_return_sale':'hcash_post_sale',r.payload).abortSignal(controller.signal);}finally{clearTimeout(timer);}
    if(response.error)throw response.error;if(!response.data?.id)throw Error('Unconfirmed response');
+   if(r.kind==='tx'&&(response.data.drawer||'cashier')!==(r.payload.p_drawer||'cashier'))throw Error('Unconfirmed drawer');
    localStorage.removeItem(key(actor));
    if(me?.id!==actor)return true;
    if(!response.data._receipt_replayed){if(r.kind==='tx')upsert(S.txs,mapTx(response.data));else if(r.kind==='sale')upsert(S.sales,mapSale(response.data));}

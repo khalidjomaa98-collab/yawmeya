@@ -86,11 +86,18 @@ function setup(role='staff'){
 }
 {
  const t=setup('admin');let creations=0;
- t.context.fnCall=async()=>{creations++;t.data.employees.push({id:'new-worker',name:'Test',role:'cashier',active:true});return {id:'new-worker'};};
+ t.context.fnCall=async ({action})=>{assert.equal(action,'create_staff');creations++;t.data.employees.push({id:'new-worker',name:'Test',role:'staff',active:true});return {id:'new-worker'};};
  await t.api.load();const fd=new FormData();fd.set('name','Test');fd.set('pin','1234');fd.set('hourly_rate','40');fd.set('effective_on','2001-01-01');
  t.failOnce();await t.api.handleForm('hr_new_staff',fd);await t.api.handleAction('hr_retry');await t.api.handleForm('hr_new_staff',fd);
  assert.equal(creations,1,'interrupted staff setup never creates a second account');
- assert.deepEqual(t.calls.map(x=>x.p_action),['convert_staff','convert_staff','set_rate'],'resuming after conversion retry skips a second conversion');
+ assert.deepEqual(t.calls.map(x=>x.p_action),['set_rate','set_rate','set_rate'],'staff creation goes directly to the staff role');
+}
+{
+ const t=setup('admin');
+ t.context.fnCall=async ({action})=>{assert.equal(action,'create_staff');return {id:'attendance-only'};};
+ await t.api.load();const fd=new FormData();fd.set('name','Test');fd.set('pin','1234');
+ await t.api.handleForm('hr_new_staff',fd);
+ assert.equal(t.calls.length,0,'attendance-only account needs no hourly rate or cashier conversion');
 }
 {
  const t=setup();let paints=0;t.context.render=()=>paints++;

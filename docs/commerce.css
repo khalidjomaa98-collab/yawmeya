@@ -5,6 +5,16 @@
 .ledger-fold.light{border-color:var(--line);color:var(--ink);margin-top:8px}.ledger-fold.light>summary{color:var(--muted)}
 .cashier-work{margin-top:14px;gap:16px}.cashier-work .acts{gap:10px}.cashier-work .act{min-height:104px;font-size:1.1rem;border:1px solid var(--line)}.cashier-work .act .ic{width:42px;height:42px}.cashier-work .act.sell{min-height:56px}.cashier-work .att-widget{padding:10px 12px}.cashier-work .att-widget .att-btn{min-height:40px}
 .compact-summary{display:flex;gap:8px;align-items:stretch}.compact-summary>div{flex:1;padding:8px 10px}.compact-summary small{font-size:.75rem}.compact-summary b{font-size:1.15rem}.compact-summary .pair{display:flex;justify-content:space-around;gap:12px}.sum .pair span{min-width:0}
+.sum.pending-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.pending-summary>div:first-child{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sum b,.mini3 .num,.drawers b,.compact-cash>b,.owner-cash strong,.movement-hero>strong{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.sum b{display:block}
+.mini3 .num{white-space:normal;overflow:visible}
+.tx-drawers{border:0;padding:0;min-inline-size:0}
+.tx-drawers>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tx-drawers label{display:flex;align-items:center;gap:8px;margin:0;padding:10px;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--sunk);overflow-wrap:anywhere;cursor:pointer}
+.tx-drawers label:has(:checked){border-color:var(--accent);background:var(--cs-soft);color:var(--accent)}
+.tx-drawers input[type=radio]{inline-size:16px;block-size:16px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--accent)}
 .owner-cash{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:9px}.owner-cash small{font-size:.8rem}.owner-cash strong{font-size:1.5rem;line-height:1.4}.openday{align-items:flex-start}.openday>.lockic{display:none}.openday .mid{width:100%}.openday .odbtns{margin-top:12px}
 .detail-title{background:none;border:0;padding:2px 0;color:var(--ink);font:inherit;font-weight:600;line-height:1.5;text-align:start;min-height:30px;white-space:normal;overflow-wrap:anywhere}.item[data-a=detail]{cursor:pointer}
 .movement-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:14px 12px 20px;background:var(--sunk);border-radius:18px}.movement-hero>small{color:var(--muted);font-size:.95rem}.movement-hero>strong{font-size:2rem}.movement-hero .cur{font-size:.85rem}
