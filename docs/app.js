@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 45; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 46; // bump with version.json on every release so open apps refresh themselves
 // Append the changes for each release before bumping APP_VERSION.
 const RELEASE_NOTES = [
   {version:41, changes:[
@@ -25,6 +25,11 @@ const RELEASE_NOTES = [
   {version:45, changes:[
     'رصيد درج الإكسسوارات ظاهر بوضوح، وصافي الحركة ظاهر لو رصيد البداية مش متسجل.',
     'تأكيد التسجيل بيظهر فور رد السيرفر وبيختفي تلقائيًا.'
+  ]},
+  {version:46, changes:[
+    'زرار «سجّل» في أخدت وأعطيت والبيع بقى ظاهر دايمًا تحت، حتى على الموبايلات الصغيرة.',
+    'تنبيه الرسالة الجديدة مبقاش بيغطي النافذة المفتوحة.',
+    'لو نسيت تختار الدرج أو الاسم، الغلطة بتبان قدامك على طول.'
   ]}
 ];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
@@ -181,7 +186,7 @@ function syncMessageAlert(){
   const dismissed=messagePreference('dismissed');
   const unread=visibleMessages().filter(n=>!n.read&&!dismissed.has(n.id));
   const latest=unread[0];
-  el.hidden=!latest||ui.initialLoading||ui.booting||!!ui.recovery||['personalInbox','releaseNotes'].includes(ui.modal?.kind);
+  el.hidden=!latest||ui.initialLoading||ui.booting||!!ui.recovery||!!ui.modal; // never cover an open sheet's title/close button
   if(el.hidden){el.replaceChildren();delete el.dataset.message;return;}
   const key=latest.id+':'+unread.length;
   if(el.dataset.message===key)return;
@@ -1016,7 +1021,7 @@ function render(){
     if (!DEMO) sb.from('notes').update({read:true}).in('id', ids).then(() => {});
   }
 }
-function formErr(msg, id = 'ferr'){ const e = document.getElementById(id); if (e) e.textContent = msg; }
+function formErr(msg, id = 'ferr'){ const e = document.getElementById(id); if (!e) return; e.textContent = msg; if (msg) try { e.scrollIntoView({block:'center', behavior:calm() ? 'auto' : 'smooth'}); } catch (_) {} }
 // For account changes that must be confirmed by the server before showing them.
 async function act(fn, opts = {}){
   if(ui.busy||ui.saving)return;
@@ -1357,7 +1362,7 @@ const F = {
     const shopId=me.role==='admin'?m.shopId:me.shop_id;
     if(!shopId||shopId!==m.shopId)return formErr('اختار محل الحركة.');
     const drawer=m.drawer;
-    if(!drawer)return formErr('اختار درج الحركة.');
+    if(!drawer){document.querySelector('.tx-drawers')?.classList.add('need');return formErr('اختار درج الحركة.');}
     if(drawer!=='cashier'&&(drawer!=='acc'||DRW[shopId]?.acc?.active!==true))return formErr('الدرج مش متاح للمحل ده.');
     const note = String(fd.get('note') || '').trim();
     if(!DEMO){void HCashReceipts.submit('tx',{p_id:uuid(),p_shop:shopId,p_party:partyId,p_name:newParty?.name||null,p_type:m.type,p_amount:amount,p_note:note,...(drawer==='acc'?{p_drawer:drawer}:{})},`${TYPES[m.type].label} ${nf(amount)} · ${newParty?.name||party(partyId)?.name||typed} · ${payName(drawer,shopId)}`);return;}

@@ -13,6 +13,7 @@
 .tx-drawers{border:0;padding:0;min-inline-size:0}
 .tx-drawers>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .tx-drawers label{display:flex;align-items:center;gap:8px;margin:0;padding:10px;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--sunk);overflow-wrap:anywhere;cursor:pointer}
+.tx-drawers.need:not(:has(:checked)) label{border-color:var(--gave);background:color-mix(in srgb,var(--gave) 10%,var(--sunk))}
 .tx-drawers label:has(:checked){border-color:var(--accent);background:var(--cs-soft);color:var(--accent)}
 .tx-drawers input[type=radio]{inline-size:16px;block-size:16px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--accent)}
 .owner-cash{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:9px}.owner-cash small{font-size:.8rem}.owner-cash strong{font-size:1.5rem;line-height:1.4}.openday{align-items:flex-start}.openday>.lockic{display:none}.openday .mid{width:100%}.openday .odbtns{margin-top:12px}
