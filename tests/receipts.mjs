@@ -22,6 +22,20 @@ function setup(store=new Map(),reply={data:{id:payload.p_id,_receipt_replayed:fa
 }
 const app=fs.readFileSync(new URL('../docs/app.js',import.meta.url),'utf8');
 {
+ const t=setup();const pending=[];const messages=[];
+ t.context.toast=message=>messages.push(message);
+ t.context.softRender=()=>{};
+ t.context.refresh=shouldApply=>new Promise(resolve=>pending.push({shouldApply,resolve}));
+ assert.equal(await t.api.submit('tx',payload,'cash'),true);
+ assert.equal(t.context.ui.saving,false);
+ assert.equal(t.context.ui.saveState,'');
+ assert.equal(messages.at(-1),'اتحفظ على السيرفر');
+ assert.equal(await t.api.submit('tx',payload,'cash'),true);
+ assert.equal(pending[0].shouldApply(),false,'old snapshot cannot paint over a later confirmation');
+ assert.equal(pending[1].shouldApply(),true);
+ pending.forEach(request=>request.resolve());
+}
+{
  const accessory={...payload,p_drawer:'acc'};
  for(const type of ['took','gave']){
   const t=setup(new Map(),{data:{id:payload.p_id,drawer:'acc'}});

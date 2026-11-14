@@ -2,6 +2,7 @@
  * on retry. The server keeps its own immutable receipt even after a ledger wipe. */
 window.HCashReceipts=(()=>{
  const key=id=>'hcash-pending:'+id;
+ let reconciliation=0;
  const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function read(){if(!me||DEMO)return null;try{const r=JSON.parse(localStorage.getItem(key(me.id))||'null');return r?.actor===me.id&&['tx','sale','return'].includes(r.kind)?r:null;}catch(_){return null;}}
  function write(r){localStorage.setItem(key(r.actor),JSON.stringify(r));if(JSON.parse(localStorage.getItem(key(r.actor))||'null')?.payload?.p_id!==r.payload.p_id)throw Error('تعذر حفظ المحاولة بأمان على الجهاز.');}
@@ -18,8 +19,13 @@ window.HCashReceipts=(()=>{
    localStorage.removeItem(key(actor));
    if(me?.id!==actor)return true;
    if(!response.data._receipt_replayed){if(r.kind==='tx')upsert(S.txs,mapTx(response.data));else if(r.kind==='sale')upsert(S.sales,mapSale(response.data));}
-   ui.saveState='saved';ui.saving=false;window.HCashFeedback?.confirmed();toast(response.data._receipt_replayed?'المحاولة كانت متسجلة قبل كده؛ اتأكدت بدون تكرار.':'اتسجلت واتأكدت من السيرفر.');
-   try{await refresh();}catch(_){toast('التسجيل اتأكد، لكن تحديث الأرصدة محتاج اتصال.');}render();return true;
+   ui.saveState='';window.HCashFeedback?.confirmed();toast(response.data._receipt_replayed?'المحاولة كانت متسجلة قبل كده؛ اتأكدت بدون تكرار.':'اتحفظ على السيرفر');
+   const revision=++reconciliation;
+   const current=()=>me?.id===actor&&revision===reconciliation;
+   void refresh(current).then(()=>{if(current())softRender();}).catch(()=>{
+    if(current()&&!ui.saving&&!ui.saveState)toast('الحركة اتحفظت. حدّث الشاشة لو الرصيد لسه ما اتحدّثش.');
+   });
+   return true;
   }catch(error){
    if(me?.id!==actor)return false;
    const definite=error.code&&!/^(08|5|PGRST00)/.test(String(error.code));

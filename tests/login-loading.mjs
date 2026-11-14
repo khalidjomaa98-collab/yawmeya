@@ -1,6 +1,6 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
 const app=fs.readFileSync('docs/app.js','utf8');
-const refreshCode=app.slice(app.indexOf('async function refresh(){'),app.indexOf('async function fetchDay('));
+const refreshCode=app.slice(app.indexOf('async function refresh('),app.indexOf('async function fetchDay('));
 const loginCode=app.slice(app.indexOf('let initialLoadGeneration='),app.indexOf('async function fnCall('));
 const empty=()=>({shops:[{id:'shop'}],users:[{id:'worker',shop_id:'shop'}],parties:[],txs:[],sales:[],days:[],devices:[],notes:[],drawers:[],returns:[],preferences:[],view_cost:false});
 {

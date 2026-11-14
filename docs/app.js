@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 44; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 45; // bump with version.json on every release so open apps refresh themselves
 // Append the changes for each release before bumping APP_VERSION.
 const RELEASE_NOTES = [
   {version:41, changes:[
@@ -21,6 +21,10 @@ const RELEASE_NOTES = [
   {version:44, changes:[
     'اختيار درج الإكسسوارات بيبقى واضح وثابت أثناء التسجيل.',
     'حسابات حضور وانصراف فقط، وعرض أوضح للأرقام الكبيرة.'
+  ]},
+  {version:45, changes:[
+    'رصيد درج الإكسسوارات ظاهر بوضوح، وصافي الحركة ظاهر لو رصيد البداية مش متسجل.',
+    'تأكيد التسجيل بيظهر فور رد السيرفر وبيختفي تلقائيًا.'
   ]}
 ];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
@@ -198,7 +202,7 @@ function must(res){ if (res.error) throw res.error; return res.data; }
 async function readPages(make){
   const all=[];for(let offset=0;;offset+=500){const batch=must(await make().range(offset,offset+499));all.push(...batch);if(batch.length<500)return {data:all,error:null};}
 }
-async function refresh(){
+async function refresh(shouldApply=()=>true){
   if (DEMO) return;
   const refreshActor=me?.id;if(!refreshActor)return;
   if (me?.role === 'staff'){
@@ -212,7 +216,7 @@ async function refresh(){
   // HR is independent of the ledger. Its completion updates the widget silently.
   void Attendance.load({silent:true}).then(()=>{if(me?.id===refreshActor)softRender();}).catch(()=>{});
   const snapshot=must(await sb.rpc('hcash_ledger_snapshot'));
-  if(me?.id!==refreshActor)return;
+  if(me?.id!==refreshActor||!shouldApply())return;
   const keys=['shops','users','parties','txs','notes','days','devices','sales','drawers','returns','preferences'];
   if(!snapshot||keys.some(k=>!Array.isArray(snapshot[k])))throw Error('Invalid ledger snapshot');
   HCashCommerce.applySnapshot(snapshot);
@@ -393,9 +397,10 @@ async function op(local, remote, failMsg){
   ui.saving=true;ui.saveState='saving';
   try {
     local();render();
-    if(DEMO){ui.saving=false;ui.saveState='saved';render();return true;}
-    await remote();ui.saving=false;ui.saveState='saved';
-    const badge=document.querySelector('.save-indicator');if(badge){badge.className='save-indicator saved';badge.textContent='✓ اتحفظ على السيرفر';}
+    if(DEMO){ui.saving=false;ui.saveState='';render();return true;}
+    await remote();ui.saving=false;ui.saveState='';
+    if(!ui.toast)toast('اتحفظ على السيرفر');
+    document.querySelector('.save-indicator')?.replaceChildren();
     softRender();return true;
   } catch(e){
     // Do not carry failed optimistic inserts into refresh() as pending forever.
@@ -431,11 +436,11 @@ function band(inner, tall){
 // Device sales paid into the cashier drawer add to it too; the accessory drawer has its own start balance.
 const cashOf = d => { if (!d || d.opening == null) return null; const r = drawerTxTotals(d,'cashier'); return d.opening + r.took - r.gave + HCashCommerce.dayNet(d).cashier; };
 const drawerTxTotals = (d,drawer) => totals(d ? dayTxs(d).filter(t=>(t.drawer||'cashier')===drawer) : []);
-const accOf = d => {
-  if(!d||d.accOpening==null)return null;
+const accessoryNet = d => {
   const {took,gave}=drawerTxTotals(d,'acc');
-  return d.accOpening+took-gave+HCashCommerce.dayNet(d).acc;
+  return took-gave+(d?HCashCommerce.dayNet(d).acc:0);
 };
+const accOf = d => d?.accOpening==null?null:d.accOpening+accessoryNet(d);
 const lastClosed = (shopId, key, fn) => { const d = S.days.filter(x => x.shopId === shopId && x.closedAt && x[key] != null).sort((a, b) => b.closedAt - a.closedAt)[0]; return d ? fn(d) : null; };
 const lastClosedCash = (shopId, drawer = 'cashier') => drawer === 'acc' ? lastClosed(shopId, 'accOpening', accOf) : lastClosed(shopId, 'opening', cashOf);
 const sumBox = (r,drawer) => `<div class="sum"><div><small>أخدت</small><b class="num in-t" data-count="${drawer}-took" data-val="${r.took}">${nf(r.took)}</b></div><div><small>أعطيت</small><b class="num out-t" data-count="${drawer}-gave" data-val="${r.gave}">${nf(r.gave)}</b></div></div>`;
@@ -480,7 +485,7 @@ function saleItem(x, o = {}){
 // Txs and sales of one list, newest first.
 const mixed = (txs, sales, o) => [...txs.map(x => ({ts:x.ts, h:() => item(x, o)})), ...sales.map(x => ({ts:x.ts, h:() => saleItem(x, o)}))].sort((a, b) => b.ts - a.ts).map(r => r.h()).join('');
 const drawersLine = (d, sid) => { const acc = accOf(d), h = d ? HCashCommerce.dayNet(d).hcash : 0;
-  const parts = [isOn(sid, 'acc') && `<span><small>${dn('acc', sid)}</small><b class="num">${acc == null ? '—' : nf(acc)}</b></span>`, isOn(sid, 'hcash') && `<span><small>${dn('hcash', sid)}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
+  const parts = [isOn(sid, 'acc') && `<span><small>${acc==null?'صافي حركة الإكسسوارات':'رصيد '+dn('acc',sid)}</small><b class="num">${nf(acc??accessoryNet(d))}</b>${acc==null?'<small>رصيد البداية مش متسجل</small>':''}</span>`, isOn(sid, 'hcash') && `<span><small>${dn('hcash', sid)}</small><b class="num">${nf(h)}</b></span>`].filter(Boolean);
   return parts.length ? `<div class="drawers" style="--n:${parts.length}">${parts.join('')}</div>` : ''; };
 const xBtn = `<button type="button" class="x" data-a="closeModal" aria-label="إغلاق">×</button>`;
 
@@ -606,14 +611,14 @@ function openDaysCard(){
   return `<section><h2>الخزنة</h2><ul class="list">${rows.map(({sh, d}) => {
     if (!d) return `<li class="item"><span class="lockic sm off" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b><small>مفيش يوم مفتوح</small></div>
-      <div class="end"><button class="btn sm" data-a="opening" data-v="${sh.id}">ابدأ برصيد</button></div></li>`;
+      <div class="end"><button class="btn sm" data-a="opening" data-v="${sh.id}">ابدأ برصيد</button>${isOn(sh.id,'acc')?`<button class="btn sm" data-a="openingAcc" data-v="${sh.id}">حدّد بداية الإكسسوارات</button>`:''}</div></li>`;
     const r = totals(dayTxs(d)), cash = cashOf(d), acc = accOf(d), st = HCashCommerce.dayNet(d);
     return `<li class="item openday"><span class="lockic sm" aria-hidden="true">${icon.lock}</span>
       <div class="mid"><b>${esc(sh.name)}</b>
-        <div class="owner-cash"><small>${dn('cashier',sh.id)}</small><strong class="num">${cash==null?'اكتب رصيد البداية':nf(cash)}</strong></div><details class="ledger-fold light" data-keep="drawer-${sh.id}"><summary>تفاصيل الخزنة</summary><div class="mini3" style="--n:${onKeys(sh.id).length}"><span><small>${dn('cashier', sh.id)}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${isOn(sh.id, 'acc') ? `<span><small>${dn('acc', sh.id)}</small><i class="num">${acc == null ? '—' : nf(acc)}</i></span>` : ''}${isOn(sh.id, 'hcash') ? `<span><small>${dn('hcash', sh.id)}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
+        <div class="owner-cash"><small>${dn('cashier',sh.id)}</small><strong class="num">${cash==null?'اكتب رصيد البداية':nf(cash)}</strong></div><details class="ledger-fold light" data-keep="drawer-${sh.id}"><summary>تفاصيل الخزنة</summary><div class="mini3" style="--n:${onKeys(sh.id).length}"><span><small>${dn('cashier', sh.id)}</small><i class="num ${cash == null ? 'gave-t' : ''}">${cash == null ? 'مفيش بداية' : nf(cash)}</i></span>${isOn(sh.id, 'acc') ? `<span><small>${acc==null?'صافي حركة الإكسسوارات':'رصيد '+dn('acc',sh.id)}</small><i class="num">${nf(acc??accessoryNet(d))}</i></span>` : ''}${isOn(sh.id, 'hcash') ? `<span><small>${dn('hcash', sh.id)}</small><i class="num">${nf(st.hcash)}</i></span>` : ''}</div>
         <small>من ${dayLabel(dayOf(d.openedAt))} ${tm(d.openedAt)}${d.opening != null ? ` · بداية ${nf(d.opening)}` : ''} · <span class="took-t num">+${nf(r.took)}</span> <span class="gave-t num">−${nf(r.gave)}</span></small>
         ${st.count||st.returned ? `<small>${st.count} جهاز اتباع${st.returned?` · مرتجع ${st.returned}`:''} · صافي مكسب <span class="num took-t">${nf(st.profit)}</span></small>` : ''}
-        </details><div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button><button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
+        </details><div class="odbtns"><button class="btn sm" data-a="opening" data-v="${sh.id}">رصيد البداية</button>${isOn(sh.id,'acc')?`<button class="btn sm" data-a="openingAcc" data-v="${sh.id}">${acc==null?'حدّد بداية الإكسسوارات':'رصيد بداية الإكسسوارات'}</button>`:''}<button class="btn sm dark" data-a="closeDay" data-v="${sh.id}">قفل اليوم</button></div></div></li>`;
   }).join('')}</ul></section>`;
 }
 function tabKenash(){
@@ -846,7 +851,7 @@ function renderModal(){
     const sh = shop(m.shopId), od = openDay(m.shopId), last = lastClosedCash(m.shopId, m.drawer);
     return sheet(`<h2>رصيد بداية ${esc(sh.name)}</h2>`, `
       ${isOn(m.shopId, 'acc') ? '' : '<!--'}<div class="seg" role="tablist">${[['cashier', payName('cashier', m.shopId)], ['acc', payName('acc', m.shopId)]].map(([k, l]) => [k, esc(l)]).map(([k, l]) => `<button type="button" role="tab" aria-selected="${m.drawer === k}" class="${m.drawer === k ? 'on' : ''}" data-a="drawer" data-v="${k}">${l}</button>`).join('')}</div>${isOn(m.shopId, 'acc') ? '' : '-->'}
-      <p class="muted small" style="text-align:center">${od ? 'الفلوس اللي في الدرج لما اليوم بدأ.' : 'هيبدأ يوم جديد بالرصيد ده.'} ${m.drawer === 'acc' ? 'بيزيد مع الأجهزة اللي فلوسها راحت درج الإكسسوار.' : 'بيزيد مع أخدت وبيع الأجهزة، ويقل مع أعطيت.'}</p>
+      <p class="muted small" style="text-align:center">${od ? 'اكتب الفلوس اللي كانت في الدرج قبل أول حركة في اليوم.' : 'هيبدأ يوم جديد بالرصيد ده.'} حركات الدرج والمبيعات والمرتجعات بتتحسب تلقائيًا.</p>
       ${last != null ? `<button class="btn sm" data-a="useLast" style="align-self:center">آخر يوم قفل على ${nf(last)}، استخدمه</button>` : ''}
       <div class="amtbox" id="amt"><span class="num">${m.amt ? Number(m.amt).toLocaleString('en-US') : '0'}</span> <small>ج.م</small></div>
       <div class="kp">${['1','2','3','4','5','6','7','8','9','000','0','⌫'].map(k => `<button type="button" data-a="kp" data-v="${k}">${k}</button>`).join('')}</div>
@@ -912,7 +917,7 @@ function confetti(){
 let toastTimer;
 function toast(t, undoId){
   ui.toast = {t, undoId}; clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { ui.toast = null; document.querySelector('.toast')?.remove(); }, undoId ? 5000 : 2600);
+  toastTimer = setTimeout(() => { ui.toast = null; document.querySelector('[data-app-toast]')?.remove(); }, undoId ? 5000 : 2600);
 }
 let lastView = '', lastSendId = null;
 const seen = new Set(), counts = {};
@@ -958,13 +963,13 @@ function render(){
   const prevTab = lastView.startsWith('admin:') && view.startsWith('admin:') ? TAB_ORDER.indexOf(lastView.slice(6)) : -1;
   let h = ui.recovery ? renderRecovery() : ui.booting ? renderBoot() : !me ? renderLogin() : ui.initialLoading ? renderLoadingData() : (ui.hr || me.role === 'staff') ? (me.role === 'admin' ? Attendance.renderAdmin() : Attendance.renderStaff()) : (me.role === 'admin' ? renderAdmin() : renderCashier());
   h += (me || ui.modal?.kind === 'theme') ? renderModal() : '';
-  if (ui.toast) h += `<div class="toast" role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
+  if (ui.toast) h += `<div class="toast" data-app-toast role="status">${esc(ui.toast.t)}${ui.toast.undoId ? ` <button class="tbtn" data-a="undo" data-v="${ui.toast.undoId}">تراجع</button>` : ''}</div>`;
   const settingsOpen=view===lastView?[...app.querySelectorAll('.settings-section[open],.ledger-fold[open]')].map(d=>d.dataset.keep||d.querySelector('summary')?.textContent):[];
   const hrSame=view===lastView&&view.startsWith('attendance:');
   const hrTop=hrSame?window.scrollY:0;
   const hrOpen=hrSame?[...app.querySelectorAll('.att-root details[open]')].map(d=>d.querySelector('summary')?.textContent):[];
   if(me)h+=HCashReceipts.render();
-  if(me)h+=`<div class="save-indicator ${ui.saveState||''}" role="status">${ui.offline?'غير متصل · اتأكد من النت قبل التسجيل':ui.saveState==='saving'?'جاري الحفظ…':ui.saveState==='saved'?(DEMO?'تمت التجربة · بدون حفظ':'✓ اتحفظ على السيرفر'):ui.saveState==='uncertain'?'لم يتم تأكيد الحفظ · حدّث وراجع السجل قبل تكرار الحركة':''}</div>`;
+  if(me)h+=`<div class="save-indicator ${ui.saveState||''}" role="status">${ui.offline?'غير متصل · اتأكد من النت قبل التسجيل':ui.saveState==='saving'?'جاري الحفظ…':ui.saveState==='uncertain'?'لم يتم تأكيد الحفظ · حدّث وراجع السجل قبل تكرار الحركة':''}</div>`;
   app.innerHTML = h;
   if(!ui.booting)window.HCashOpening?.ready();
   Attendance.decorateDates();
@@ -1020,12 +1025,14 @@ async function act(fn, opts = {}){
   ui.busy = true;
   const btns = [...document.querySelectorAll('form button')]; btns.forEach(b => b.disabled = true);
   try {
-    await fn(); ui.busy = false;ui.saveState='saved';
+    await fn(); ui.busy = false;ui.saveState='';
     if (me) await refresh().catch(() => {});
     if (opts.done) opts.done();
+    else toast('اتحفظ على السيرفر');
     render();
   } catch(e){
     ui.busy = false;ui.saveState='uncertain'; btns.forEach(b => b.disabled = false);
+    if(status)status.textContent='لم يتم تأكيد الحفظ';
     if (document.getElementById(opts.errId || 'ferr')) formErr(errText(e), opts.errId); else { toast(errText(e)); render(); }
   }
 }
@@ -1197,6 +1204,7 @@ const A = {
   chPin(v){ ui.modal = {kind:'pin', id:v}; },
   wipe(){if(HCashReceipts.read()){toast('أكد محاولة الحفظ المعلّقة قبل المسح.');return false;}ui.modal = {kind:'wipe'}; },
   opening(v){ ui.modal = {kind:'opening', shopId:v}; A.drawer('cashier'); },
+  openingAcc(v){ if(me?.role!=='admin'||!isOn(v,'acc'))return false;ui.modal={kind:'opening',shopId:v};A.drawer('acc'); },
   drawer(v){ const m = ui.modal, d = openDay(m.shopId), cur = d && (v === 'acc' ? d.accOpening : d.opening); m.drawer = v; m.amt = cur != null ? String(cur) : ''; m.fresh = true; },
   useLast(){ const last = lastClosedCash(ui.modal.shopId, ui.modal.drawer); ui.modal.amt = String(Math.max(0, Math.round(last))); },
   saveOpening(){

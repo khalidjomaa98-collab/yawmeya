@@ -10,7 +10,7 @@ const pending=ctx.op(()=>local++,()=>new Promise(r=>release=r));
 assert.equal(ctx.ui.saveState,'saving');
 assert.equal(await ctx.op(()=>local++,async()=>remote++),false);
 assert.equal(local,1);assert.equal(remote,0,'second write is blocked while first awaits confirmation');
-release();assert.equal(await pending,true);assert.equal(ctx.ui.saveState,'saved');
+release();assert.equal(await pending,true);assert.equal(ctx.ui.saveState,'');
 assert.equal(await ctx.op(()=>{},async()=>{throw Error('network');}),false);
 assert.equal(ctx.ui.saveState,'uncertain');assert.equal(ctx.ui.saving,false);
 ctx.S={txs:[],sales:[],days:[]};
@@ -24,4 +24,15 @@ assert.equal(ctx.S.txs.length,1);assert.equal(ctx.S.txs[0].pending,false,'a comm
 ctx.refresh=async()=>{};
 await ctx.op(()=>{throw Error('local failure');},async()=>{});
 assert.equal(ctx.ui.saving,false,'local rendering failures must release the save lock');
+const drawerContext={
+  totals:rows=>({took:rows.filter(t=>t.type==='took'&&!t.deleted).reduce((sum,t)=>sum+t.amount,0),gave:rows.filter(t=>t.type==='gave').reduce((sum,t)=>sum+t.amount,0)}),
+  dayTxs:()=>[{drawer:'acc',type:'took',amount:5000},{drawer:'acc',type:'gave',amount:500},{drawer:'cashier',type:'took',amount:100000}],
+  HCashCommerce:{dayNet:()=>({acc:200})},
+};
+vm.createContext(drawerContext);
+vm.runInContext(app.slice(app.indexOf('const drawerTxTotals ='),app.indexOf('const lastClosed =')),drawerContext);
+assert.equal(vm.runInContext('accessoryNet({accOpening:null})',drawerContext),4700);
+assert.equal(vm.runInContext('accOf({accOpening:null})',drawerContext),null);
+assert.equal(vm.runInContext('accOf({accOpening:0})',drawerContext),4700);
+assert.equal(vm.runInContext('accOf({accOpening:3000})',drawerContext),7700);
 console.log('PASS: duplicate-submit guard, failed optimistic cleanup, lost response reconciliation, local-error recovery');
