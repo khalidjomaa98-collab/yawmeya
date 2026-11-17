@@ -143,3 +143,12 @@
 @media(max-width:440px){.att-root .att-card{padding:18px}.att-person{flex-wrap:wrap}.att-person-time{margin-inline-start:52px;margin-top:-6px}.att-root .att-tabs-three button{font-size:.84rem}.att-view-heading{align-items:flex-start}}
 @media(max-width:350px){.att-root .att-content{padding-inline:12px}.att-root .att-card{padding:15px}.att-root .att-tools .att-btn{font-size:.78rem;padding-inline:9px}.att-tools{align-items:flex-start}.att-root .att-clock{font-size:2.15rem}}
 @media(prefers-reduced-motion:reduce){.att-root .att-btn,.att-root .att-tabs button{transition:none}.att-root .att-btn:active:not(:disabled){transform:none}}
+
+/* v47: four main tabs + quick close of a forgotten shift */
+.att-root .att-tabs-four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.att-root .att-tabs-four button{font-size:.84rem;padding-inline:2px}
+.att-quick-out{margin:8px 0 4px;margin-inline-start:52px;border:1px dashed var(--line);border-radius:12px;padding:8px 12px}
+.att-quick-out[open]{border-style:solid;border-color:var(--att-action,var(--accent))}
+.att-quick-out summary{cursor:pointer;font-size:.86rem;font-weight:600;color:var(--att-action,var(--accent));min-height:32px;display:flex;align-items:center}
+.att-quick-out .att-form{margin-top:8px}
+@media(max-width:440px){.att-quick-out{margin-inline-start:0}}

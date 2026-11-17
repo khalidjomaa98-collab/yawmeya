@@ -1,6 +1,6 @@
 'use strict';
 const CFG = window.YAWMEYA_CONFIG;
-const APP_VERSION = 46; // bump with version.json on every release so open apps refresh themselves
+const APP_VERSION = 47; // bump with version.json on every release so open apps refresh themselves
 // Append the changes for each release before bumping APP_VERSION.
 const RELEASE_NOTES = [
   {version:41, changes:[
@@ -30,6 +30,12 @@ const RELEASE_NOTES = [
     'زرار «سجّل» في أخدت وأعطيت والبيع بقى ظاهر دايمًا تحت، حتى على الموبايلات الصغيرة.',
     'تنبيه الرسالة الجديدة مبقاش بيغطي النافذة المفتوحة.',
     'لو نسيت تختار الدرج أو الاسم، الغلطة بتبان قدامك على طول.'
+  ]},
+  {version:47, changes:[
+    'لو موظف نسي ينصرف: تقدر تقفل ورديته من صفحة المتابعة على طول بزرار «اقفل الوردية».',
+    'صفحة الحضور بقت أبسط: المتابعة والموظفين والمرتبات والمراجعة في صف واحد.',
+    'رسايل جماعية: ابعت لكذا موظف أو لمحل كامل أو للكل مرة واحدة.',
+    'آخر رسالة بعتها مبقتش بتفضل ظاهرة في الرئيسية.'
   ]}
 ];
 const RECOVERY_EMAIL = 'k_elgindy@yahoo.com';
@@ -200,6 +206,11 @@ async function fetchPersonalMessages(actor, id){
   if(me?.id!==actor)return [];
   receivePersonalMessages(rows);
   return rows;
+}
+function msgCount(){
+  const boxes=[...document.querySelectorAll('#messagef input[name=recipient]')],n=boxes.filter(x=>x.checked).length;
+  if(ui.modal?.kind==='composeMessage')ui.modal.picked=boxes.filter(x=>x.checked).map(x=>x.value);
+  const el=document.getElementById('msg-count');if(el)el.textContent=n?(n===boxes.length?'هتتبعت للكل ('+n+')':'هتتبعت لـ '+n):'مفيش حد متختار';
 }
 const extraDays = new Set();
 function must(res){ if (res.error) throw res.error; return res.data; }
@@ -563,8 +574,8 @@ function dashboardMessages(){
   const latest=manager?notes[0]:notes.find(n=>!n.read);
   return `<section class="card dashboard-messages${unread?' has-unread':''}">
     <div class="head"><h2>${manager?'رسائل الفريق':'رسائلي'}</h2>${unread?`<strong class="message-unread">${unread===1?'رسالة جديدة':`${unread} رسائل جديدة`}</strong>`:''}</div>
-    ${latest?`<p class="message-preview">${manager?`<b>إلى ${esc(user(latest.recipient)?.name||'الموظف')} · </b>`:''}${esc(latest.text)}</p>`:`<p class="muted small">${manager?'ابعت رسالة خاصة لموظف بالاسم.':'مفيش رسائل جديدة.'}</p>`}
-    <div class="message-actions">${manager?'<button class="btn primary sm" data-a="composeMessage">إرسال لموظف</button><button class="btn sm" data-a="sentMessages">الرسائل المرسلة</button>':`<button class="btn ${unread?'primary ':''}sm" data-a="inbox">${unread?'اقرأ الرسائل':'افتح رسائلي'}</button>`}</div>
+    ${manager?`<p class="muted small">${(()=>{const waiting=notes.filter(n=>!n.read).length;return waiting?`${waiting===1?'رسالة واحدة':waiting+' رسائل'} لسه ما اتقرتش`:'ابعت رسالة لموظف أو لكذا موظف مرة واحدة.';})()}</p>`:latest?`<p class="message-preview">${esc(latest.text)}</p>`:'<p class="muted small">مفيش رسائل جديدة.</p>'}
+    <div class="message-actions">${manager?'<button class="btn primary sm" data-a="composeMessage">رسالة جديدة</button><button class="btn sm" data-a="sentMessages">الرسائل المرسلة</button>':`<button class="btn ${unread?'primary ':''}sm" data-a="inbox">${unread?'اقرأ الرسائل':'افتح رسائلي'}</button>`}</div>
   </section>`;
 }
 function renderCashier(){
@@ -692,7 +703,7 @@ function tabTxs(){
 function tabNotes(){
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
   return `${perm === 'default' ? `<div class="card"><p>فعّل الإشعارات علشان توصلك والبرنامج في الخلفية.</p><button class="btn primary" data-a="askNotify">فعّل الإشعارات</button></div>` : ''}
-    <button class="btn primary" data-a="composeMessage">إرسال لموظف</button> <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.length ? `<ul class="list">${S.notes.map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${n.recipient?'إلى '+esc(user(n.recipient)?.name||'الموظف')+' · ':''}${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
+    <button class="btn primary" data-a="composeMessage">رسالة جديدة</button> <button class="btn" data-a="auditOpen">سجل التعديلات</button>${S.notes.some(n=>n.kind!=='personal') ? `<ul class="list">${S.notes.filter(n=>n.kind!=='personal').map(n => `<li class="item"><div class="mid"><b style="white-space:normal;font-weight:${n.read ? 500 : 700}">${esc(n.text)}</b>${n.shiftId?`<button class="btn sm" data-a="attendanceAlert" data-v="${n.shiftId}">راجع الوردية</button>`:''}<small>${n.recipient?'إلى '+esc(user(n.recipient)?.name||'الموظف')+' · ':''}${dayLabel(dayOf(n.ts))} · ${tm(n.ts)}</small></div></li>`).join('')}</ul>` : `<p class="empty">مفيش إشعارات لسه.</p>`}`;
 }
 function tabSet(){
   return `${HCashBackups.render()}<div class="release-card"><div><b dir="ltr">H-Cash</b><small>إدارة المحلات والحضور والمرتبات</small></div><span class="version-tag">إصدار ${APP_VERSION}</span></div><details class="settings-section"><summary><h2>المحلات</h2></summary><form id="shopsf" class="card">${S.shops.map(s => `<div class="field"><label for="s_${s.id}">اسم المحل</label><input id="s_${s.id}" name="${s.id}" value="${esc(s.name)}"></div>`).join('')}<button class="btn">احفظ الأسامي</button></form></details>
@@ -761,8 +772,14 @@ function renderModal(){
   }
   if(m.kind==='composeMessage'&&me.role==='admin'){
     const recipients=S.users.filter(u=>u.active&&['cashier','staff'].includes(u.role));
-    return sheet('<h2>إرسال لموظف</h2>',recipients.length?
-      '<form id="messagef"><label class="field">الموظف<select name="recipient" required><option value="">اختار موظف</option>'+recipients.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+(shop(u.shop_id)?' · '+esc(shop(u.shop_id).name):'')+'</option>').join('')+'</select></label><label class="field">الرسالة<textarea name="text" maxlength="500" rows="4" required></textarea></label><p id="ferr" class="err" role="alert"></p><button class="btn primary wide">ابعت الرسالة</button></form>':'<p class="empty">مفيش موظفين نشطين.</p>');
+    const picked=new Set(m.picked||[]);
+    const groups=[['all','الكل'],...S.shops.filter(sh=>recipients.some(u=>u.shop_id===sh.id)).map(sh=>[sh.id,esc(sh.name)]),...(recipients.some(u=>u.role==='staff')?[['staff','موظفين الحضور']]:[])];
+    return sheet('<h2>رسالة جديدة</h2>',recipients.length?
+      `<form id="messagef"><fieldset class="field msg-to"><legend>تتبعت لمين؟ <small class="muted">(اختار واحد أو أكتر)</small></legend>
+        <div class="msg-groups">${groups.map(([k,l])=>`<button type="button" class="chip" data-a="msgGroup" data-v="${esc(k)}">${l}</button>`).join('')}</div>
+        <div class="msg-people">${recipients.map(u=>`<label><input type="checkbox" name="recipient" value="${esc(u.id)}" ${picked.has(u.id)?'checked':''}><span>${esc(u.name)}<small>${u.role==='staff'?'حضور فقط':esc(shop(u.shop_id)?.name||'كاشير')}</small></span></label>`).join('')}</div>
+        <p class="muted small" id="msg-count">${picked.size?'هتتبعت لـ '+picked.size:'مفيش حد متختار'}</p></fieldset>
+        <label class="field">الرسالة<textarea name="text" maxlength="500" rows="4" required>${esc(m.text||'')}</textarea></label><p id="ferr" class="err" role="alert"></p><button class="btn primary wide">ابعت الرسالة</button></form>`:'<p class="empty">مفيش موظفين نشطين.</p>');
   }
   if (m.kind === 'theme'){
     const cur = themePref();
@@ -1064,6 +1081,14 @@ const A = {
   hrOpen(){ ui.hr = true; ui.modal = null; Attendance.load({silent:true}).then(render).catch(() => {}); },
   composeMessage(){if(me.role!=='admin')return false;ui.modal={kind:'composeMessage'};},
   sentMessages(){if(me.role!=='admin')return false;ui.modal={kind:'sentMessages'};},
+  msgGroup(v){
+    if(me.role!=='admin'||ui.modal?.kind!=='composeMessage')return false;
+    const boxes=[...document.querySelectorAll('#messagef input[name=recipient]')];
+    const inGroup=box=>{const u=user(box.value);return v==='all'||(v==='staff'?u?.role==='staff':u?.shop_id===v);};
+    const target=boxes.filter(inGroup),on=!target.every(x=>x.checked);
+    target.forEach(x=>{x.checked=on;});
+    msgCount();return false;
+  },
   dismissMessageAlert(){
     if(!me)return false;
     const dismissed=messagePreference('dismissed');
@@ -1374,15 +1399,19 @@ const F = {
   },
   messagef(fd){
     if(me.role!=='admin'||ui.modal?.kind!=='composeMessage')return;
-    const recipient=String(fd.get('recipient')||''), message=String(fd.get('text')||'').trim();
-    if(!S.users.some(u=>u.id===recipient&&u.active&&['cashier','staff'].includes(u.role))||!message||message.length>500)
-      return formErr('اختار موظف واكتب رسالة من ١ إلى ٥٠٠ حرف.');
-    const key=JSON.stringify([recipient,message]);
-    if(ui.modal.messageKey!==key){ui.modal.messageKey=key;ui.modal.messageId=uuid();}
-    const id=ui.modal.messageId;
-    if(DEMO){ui.modal=null;toast('معاينة الرسالة تمت.');render();return;}
-    void act(async()=>must(await sb.rpc('hcash_send_message',{p_id:id,p_recipient:recipient,p_text:message})),
-      {done:()=>{ui.modal=null;toast('الرسالة اتحفظت في صندوق الموظف.');}});
+    const valid=new Set(S.users.filter(u=>u.active&&['cashier','staff'].includes(u.role)).map(u=>u.id));
+    const recipients=[...new Set(fd.getAll('recipient').map(String))].filter(id=>valid.has(id)),message=String(fd.get('text')||'').trim();
+    ui.modal.text=message;
+    if(!recipients.length)return formErr('اختار موظف واحد على الأقل.');
+    if(!message||message.length>500)return formErr('اكتب رسالة من ١ إلى ٥٠٠ حرف.');
+    const key=JSON.stringify([recipients.slice().sort(),message]);
+    if(ui.modal.messageKey!==key){ui.modal.messageKey=key;ui.modal.messageIds={};ui.modal.sent=[];}
+    const ids=ui.modal.messageIds;recipients.forEach(r=>{ids[r]||=uuid();});
+    const label=recipients.length===1?esc(user(recipients[0])?.name||'الموظف'):recipients.length+' موظفين';
+    if(DEMO){ui.modal=null;toast('معاينة: الرسالة كانت هتتبعت لـ '+label+'.');render();return;}
+    const modal=ui.modal;
+    void act(async()=>{for(const r of recipients){if(modal.sent.includes(r))continue;must(await sb.rpc('hcash_send_message',{p_id:ids[r],p_recipient:r,p_text:message}));modal.sent.push(r);}},
+      {done:()=>{ui.modal=null;toast('الرسالة اتبعتت لـ '+label+'.');}});
   },
   delf(fd){
     const t=S.txs.find(x=>x.id===ui.modal.id),reason=String(fd.get('reason')||'').trim();if(!t||reason.length<3||reason.length>500)return formErr('اكتب سبب واضح من ٣ إلى ٥٠٠ حرف.');
@@ -1462,6 +1491,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, c = el.dataset.c;
+  if(el.matches?.('#messagef input[name=recipient]')){msgCount();return;}
   if(el.id==='f-shop'&&ui.modal?.kind==='tx'){
     ui.modal.shopId=el.value;
     ui.modal.drawer=DRW[el.value]?.acc?.active===true?null:'cashier';
